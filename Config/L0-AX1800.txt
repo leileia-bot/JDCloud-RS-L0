@@ -1,0 +1,49 @@
+# L0 底座配置：京东云亚瑟 AX1800 Pro
+# 原则：只留一条栈 —— nftables / ext4 / dnsmasq-full / vantage 主题 / 无 NSS
+
+# ---------- 目标平台 ----------
+CONFIG_TARGET_qualcommax=y
+CONFIG_TARGET_qualcommax_ipq60xx=y
+CONFIG_TARGET_MULTI_PROFILE=y
+CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y
+CONFIG_TARGET_DEVICE_PACKAGES_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=""
+
+# ---------- 分区：2G 根分区（内核槽 12M 由 workflow 打补丁） ----------
+CONFIG_TARGET_ROOTFS_PARTSIZE=2048
+CONFIG_TARGET_ROOTFS_SQUASHFS=y
+CONFIG_TARGET_ROOTFS_EXT4FS=n
+
+# ---------- LuCI：vantage 单一主题（本轮不上 jdrs） ----------
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-ssl=y
+CONFIG_PACKAGE_luci-theme-vantage=y
+CONFIG_PACKAGE_luci-theme-bootstrap=y
+CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+CONFIG_PACKAGE_luci-app-firewall=y
+CONFIG_LUCI_LANG_zh_Hans=y
+
+# ---------- DNS：dnsmasq-full 独占 53 ----------
+CONFIG_PACKAGE_dnsmasq-full=y
+CONFIG_PACKAGE_dnsmasq=n
+
+# ---------- 拒绝 NSS（冲突源头，彻底排除） ----------
+CONFIG_PACKAGE_kmod-qca-nss-dp=n
+CONFIG_PACKAGE_kmod-qca-nss-ecm=n
+CONFIG_PACKAGE_qca-nss-drv=n
+CONFIG_PACKAGE_qca-nss-clients=n
+
+# ---------- U 盘互换层：ext4 + vfat，砍 exfat / ntfs3 ----------
+CONFIG_PACKAGE_block-mount=y
+CONFIG_PACKAGE_kmod-usb3=y
+CONFIG_PACKAGE_kmod-usb-storage=y
+CONFIG_PACKAGE_kmod-usb-storage-uas=y
+CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_kmod-fs-vfat=y
+CONFIG_PACKAGE_kmod-nls-cp437=y
+CONFIG_PACKAGE_kmod-nls-iso8859-1=y
+CONFIG_PACKAGE_e2fsprogs=y
+CONFIG_PACKAGE_kmod-fs-exfat=n
+CONFIG_PACKAGE_kmod-fs-ntfs3=n
+
+# ---------- 内存：ZRAM（默认即内存一半，不写死小值） ----------
+CONFIG_PACKAGE_zram-swap=y
