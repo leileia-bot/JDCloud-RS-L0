@@ -123,6 +123,59 @@ jobs:
           # defconfig 会把默认选的 nss 驱动拉回来，这里二次压制
           sed -i 's/^CONFIG_PACKAGE_kmod-nss-wifi-drv=y/# CONFIG_PACKAGE_kmod-nss-wifi-drv is not set/' .config
           sed -i 's/^CONFIG_ATH11K_NSS_WIFI=y/# CONFIG_ATH11K_NSS_WIFI is not set/' .config
+
+          # ==== 全量 kmod：m → y，把模块编进镜像，不再单独发 kmod 包 ====
+          # 排除名单（二选一已按"底座已验证的那套"定案，含关联包）
+          #   kmod-nss-wifi-drv   NSS 必须关（daed/透明代理要过 netfilter）
+          #   kmod-fs-afs/ntfs3   不用；ntfs3 与内核内置重叠
+          #   r8152               与 kmod-usb-net-rtl8152 同类二选一 → 留后者（走 usb-net 框架）
+          #   kmod-ath10k / -ct   设备是 ath11k，ath10k 两套整族剔除（含固件层不选）
+          #   wpad 变体族         只留 wpad-openssl，避免加密库全家桶互斥
+          #   selinux 变体族      不用 SELinux，整族剔除，防止"装了变体没装框架"
+          #   firewall(fw3)       走 fw4 线；nftables-json / apk-mbedtls 同族剔除
+          #   rtl826x-firmware    该树模板 bug（自我冲突），永远装不上
+          BLACKLIST="kmod-nss-wifi-drv kmod-fs-afs kmod-fs-ntfs3 r8152 \
+            kmod-ath10k kmod-ath10k-ct \
+            wpad-basic-mbedtls wpad-basic-wolfssl wpad-wolfssl \
+            firewall nftables-json apk-mbedtls procd-selinux busybox-selinux \
+            uencrypt-openssl uencrypt-wolfssl \
+            f2fs-tools-selinux mkf2fs-selinux f2fsck-selinux libf2fs-selinux \
+            libwolfsslcpu-crypto rtl826x-firmware \
+            ath10k-firmware-qca988x ath10k-firmware-qca9887 ath10k-firmware-qca99x0 \
+            ath10k-firmware-qca9984 ath10k-firmware-qca4019 ath10k-firmware-qca9888 \
+            ath10k-firmware-qca6174 ath10k-firmware-qca9377"
+
+          apply_blacklist() {
+            for p in $BLACKLIST; do
+              sed -i "s/^CONFIG_PACKAGE_${p}=[my]\$/# CONFIG_PACKAGE_${p} is not set/" .config
+              grep -q "^# CONFIG_PACKAGE_${p} is not set" .config || \
+                echo "# CONFIG_PACKAGE_${p} is not set" >> .config
+            done
+          }
+
+          if [ "${{ inputs.ALL_KMODS }}" = "true" ]; then
+            echo "==== [全量kmod 1/3] m → y ===="
+            sed -i 's/^CONFIG_PACKAGE_\(kmod-[A-Za-z0-9_.-]*\)=m$/CONFIG_PACKAGE_\1=y/' .config
+            echo "==== [全量kmod 2/3] 套排除名单 + 二次 defconfig（解依赖/收敛 select） ===="
+            apply_blacklist
+            make defconfig -j$(nproc)
+            echo "==== [全量kmod 3/3] 再压一遍，防止 luci-app-* 的 select 把变体拉回 ===="
+            apply_blacklist
+            make defconfig -j$(nproc)
+            apply_blacklist
+            echo "选中 kmod (y): $(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)"
+            echo "模块 kmod (m): $(grep -c '^CONFIG_PACKAGE_kmod.*=m' .config)"
+            KY=$(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)
+            [ "$KY" -ge 200 ] || { echo "失败: kmod 内建数只有 $KY，全量未生效"; exit 1; }
+            echo "排除项校验（必须全部 is not set）:"
+            for p in kmod-ath10k kmod-ath10k-ct r8152 firewall wpad-wolfssl kmod-nss-wifi-drv; do
+              grep -q "^# CONFIG_PACKAGE_${p} is not set" .config && echo "  OK $p" || echo "  !! $p 仍被选中"
+            done
+            # 关键依赖不能被误剔
+            for p in kmod-mac80211 kmod-ath11k kmod-ath11k-ahb kmod-usb-net kmod-nft-core; do
+              grep -q "^CONFIG_PACKAGE_${p}=y" .config && echo "  依赖OK $p" || echo "  !! 依赖丢失 $p"
+            done
+          fi
           echo "==== 校验关键符号 ===="
           grep -E "^CONFIG_TARGET_qualcommax=y|jdcloud_re-ss-01=y|CONFIG_TARGET_ROOTFS_PARTSIZE|CONFIG_PACKAGE_luci-theme-vantage=y|CONFIG_PACKAGE_dnsmasq-full=y|CONFIG_PACKAGE_zram-swap=y|CONFIG_PACKAGE_kmod-usb-storage=y|CONFIG_PACKAGE_kmod-fs-ext4=y" .config || true
           echo "==== 冲突检查（必须全空） ===="
@@ -260,7 +313,7 @@ jobs:
             刷机用 *sysupgrade.bin（保留配置升级）或 *factory.bin（首次/救砖）。
 
       - name: Release Packages
-        if: ${{ success() && !inputs.TEST && hashFiles('./wrt/upload/*.tar.gz') != '' }}
+        if: ${{ success() && !inputs.TEST && !inputs.ALL_KMODS && hashFiles('./wrt/upload/*.tar.gz') != '' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: PKG-${{ env.WRT_DATE }}
