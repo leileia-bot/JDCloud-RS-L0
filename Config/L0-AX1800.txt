@@ -29,9 +29,10 @@ CONFIG_PACKAGE_dnsmasq=n
 CONFIG_PACKAGE_kmod-nss-wifi-drv=n
 CONFIG_PACKAGE_nss-firmware=n
 CONFIG_ATH11K_NSS_WIFI=n
-# 无线固件：改回 DD-WRT 线 2.12（WLAN.HK.2.12-01460），不再用 linux-firmware 的 2.7
-CONFIG_PACKAGE_ath11k-firmware-ipq6018=n
-CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt=y
+# 无线固件包不在此处固定，由 workflow 的 WIFI_FW 输入注入：
+#   qca25     -> ath11k-firmware-ipq6018（QCA 官方，WLAN.HK.2.5.0.1-03982）
+#   ddwrt212  -> ath11k-firmware-ipq6018-ddwrt（DD-WRT，WLAN.HK.2.12-01460）
+# 永不使用 linux-firmware 的 2.7.0.1
 CONFIG_PACKAGE_kmod-qca-nss-dp=n
 CONFIG_PACKAGE_kmod-qca-nss-ecm=n
 CONFIG_PACKAGE_qca-nss-drv=n

@@ -12,6 +12,14 @@ on:
         type: boolean
         default: false
         required: false
+      WIFI_FW:
+        description: '无线固件包：qca25=官方 2.5.0.1-03982 ｜ ddwrt212=DD-WRT 2.12-01460'
+        type: choice
+        options:
+          - qca25
+          - ddwrt212
+        default: qca25
+        required: true
 
 env:
   SOURCE_REPO: https://github.com/VIKINGYFY/immortalwrt.git
@@ -67,21 +75,44 @@ jobs:
           sed -i 's/KERNEL_SIZE := 6144k/KERNEL_SIZE := 12288k/g' "$MK"
           grep -n "KERNEL_SIZE" "$MK" | head
 
-      - name: 根修 target.mk（自带默认包 vs 上游的 2 选 1）
+      - name: 无线固件包（${{ inputs.WIFI_FW }}）
         run: |
           cd ./wrt
           TM=./target/linux/qualcommax/ipq60xx/target.mk
-          # 源默认写的是 ddwrt 固件 + NSS wifi 驱动；保留固件，剔掉 NSS 驱动
-          sed -i 's/ath11k-firmware-ipq6018-ddwrt kmod-nss-wifi-drv/ath11k-firmware-ipq6018-ddwrt/' "$TM"
-          cat "$TM"
+          QCA=./package/firmware/linux-firmware/qca_ath11k.mk
+          MODE="${{ inputs.WIFI_FW }}"
+          echo "无线固件模式: $MODE"
+
+          if [ "$MODE" = "qca25" ]; then
+            # 上游 QCA ath11k-firmware 包：安装 IPQ6018/hw1.0/2.5.0.1/WLAN.HK.2.5.0.1-03982
+            curl -fsSL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/firmware/ath11k-firmware/Makefile" \
+              -o ./package/firmware/ath11k-firmware/Makefile
+            grep -E "PKG_SOURCE_URL|2\.5\.0\.1-03982" ./package/firmware/ath11k-firmware/Makefile | head
+            # linux-firmware 里同名的 ipq6018 段必须删掉（否则同名包重复定义，且会带 2.7.0.1）
+            perl -0pi -e 's{Package/ath11k-firmware-ipq6018 = .*?\$\(eval \$\(call BuildPackage,ath11k-firmware-ipq6018\)\)\n\n?}{}s' "$QCA"
+            grep -c "ath11k-firmware-ipq6018" "$QCA" || echo "OK: linux-firmware 已不提供 ipq6018"
+            sed -i 's/ath11k-firmware-ipq6018-ddwrt kmod-nss-wifi-drv/ath11k-firmware-ipq6018/' "$TM"
+          else
+            # 保留源默认的 ddwrt 固件，只剔掉 NSS wifi 驱动
+            sed -i 's/ath11k-firmware-ipq6018-ddwrt kmod-nss-wifi-drv/ath11k-firmware-ipq6018-ddwrt/' "$TM"
+          fi
+          grep -n "ath11k" "$TM" | head
 
       - name: Apply Config
         run: |
           cd ./wrt
           [ -d ../files ] && cp -rf ../files/. ./
           cat "../Config/$WRT_CONFIG.txt" >> .config
+          MODE="${{ inputs.WIFI_FW }}"
+          if [ "$MODE" = "qca25" ]; then
+            echo "CONFIG_PACKAGE_ath11k-firmware-ipq6018=y" >> .config
+            echo "# CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt is not set" >> .config
+          else
+            echo "# CONFIG_PACKAGE_ath11k-firmware-ipq6018 is not set" >> .config
+            echo "CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt=y" >> .config
+          fi
           make defconfig -j$(nproc)
-          # defconfig 会把默认选的 nss 驱动拉回来，这里二次压制（固件保留 ddwrt 2.12）
+          # defconfig 会把默认选的 nss 驱动拉回来，这里二次压制
           sed -i 's/^CONFIG_PACKAGE_kmod-nss-wifi-drv=y/# CONFIG_PACKAGE_kmod-nss-wifi-drv is not set/' .config
           sed -i 's/^CONFIG_ATH11K_NSS_WIFI=y/# CONFIG_ATH11K_NSS_WIFI is not set/' .config
           echo "==== 校验关键符号 ===="
@@ -89,8 +120,13 @@ jobs:
           echo "==== 冲突检查（必须全空） ===="
           grep -E "^CONFIG_PACKAGE_(dnsmasq|kmod-fs-ntfs3|kmod-nss-wifi-drv)=y|^CONFIG_ATH11K_NSS_WIFI=y" .config || echo "OK: 无冲突项"
           echo "==== WiFi 路径检查 ===="
-          grep -E "^CONFIG_PACKAGE_kmod-ath11k=y|^CONFIG_PACKAGE_kmod-ath11k-ahb=y|^CONFIG_PACKAGE_ipq-wifi-jdcloud_re-ss-01=y|^CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt=y|^CONFIG_ATH11K_NSS_WIFI is not set" .config || echo "警告: WiFi 路径不全"
-          grep -q "^CONFIG_PACKAGE_ath11k-firmware-ipq6018=y" .config && echo "警告: linux-firmware 2.7 固件仍在" || echo "OK: 2.7 固件未选中"
+          grep -E "^CONFIG_PACKAGE_kmod-ath11k=y|^CONFIG_PACKAGE_kmod-ath11k-ahb=y|^CONFIG_PACKAGE_ipq-wifi-jdcloud_re-ss-01=y|^CONFIG_ATH11K_NSS_WIFI is not set" .config || echo "警告: 公共 WiFi 路径不全"
+          if [ "$MODE" = "qca25" ]; then
+            grep -q "^CONFIG_PACKAGE_ath11k-firmware-ipq6018=y" .config && echo "OK: QCA 2.5.0.1-03982 已选中" || { echo "失败: QCA 2.5 固件未选中"; exit 1; }
+            grep -q "^CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt=y" .config && { echo "失败: ddwrt 2.12 仍被选中"; exit 1; } || echo "OK: ddwrt 未选中"
+          else
+            grep -q "^CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt=y" .config && echo "OK: DD-WRT 2.12 已选中" || { echo "失败: ddwrt 固件未选中"; exit 1; }
+          fi
           grep -q "^CONFIG_PACKAGE_kmod-nss-wifi-drv=y" .config && echo "警告: NSS 驱动仍在" || echo "OK: NSS 驱动未选中"
           grep -c "^CONFIG_ATH11K_NSS_WIFI is not set" .config | sed 's/^/ATH11K_NSS_WIFI 已关闭行数: /'
 
@@ -106,19 +142,23 @@ jobs:
           cd ./wrt
           make -j$(nproc) || make -j1 V=s
 
-      - name: 断言 2.12 固件已落地
+      - name: 断言无线固件已落地（${{ inputs.WIFI_FW }}）
         if: ${{ !inputs.TEST }}
         run: |
           cd ./wrt
+          MODE="${{ inputs.WIFI_FW }}"
           FW=$(ls -1d ./build_dir/target-*/root-*/lib/firmware/IPQ6018 2>/dev/null | head -1)
           echo "固件目录: $FW"
           ls -l "$FW" | head -20
           SIZE=$(stat -c %s "$FW/q6_fw.b03" 2>/dev/null || echo 0)
-          BOARD=$(stat -c %s "$FW/board-2.bin" 2>/dev/null || echo 0)
-          echo "q6_fw.b03=$SIZE board-2.bin=$BOARD"
-          [ "$SIZE" = "2909712" ] || { echo "失败: q6_fw.b03 不是 2.12 分片"; exit 1; }
-          [ "$BOARD" = "787208" ] || { echo "警告: board-2.bin 不是 DD-WRT 那份"; }
-          echo "OK: DD-WRT 2.12 固件已落地"
+          echo "q6_fw.b03=$SIZE"
+          if [ "$MODE" = "qca25" ]; then
+            [ "$SIZE" = "2559184" ] || { echo "失败: q6_fw.b03 不是 2.5.0.1-03982 分片"; exit 1; }
+            echo "OK: 官方 2.5.0.1-03982 固件已落地"
+          else
+            [ "$SIZE" = "2909712" ] || { echo "失败: q6_fw.b03 不是 2.12 分片"; exit 1; }
+            echo "OK: DD-WRT 2.12-01460 固件已落地"
+          fi
 
       - name: Collect
         if: always()
