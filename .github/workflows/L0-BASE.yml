@@ -157,7 +157,8 @@ jobs:
           echo "=== [6] 体积预估 ==="
           grep -E "^CONFIG_TARGET_ROOTFS_PARTSIZE" .config || true
 
-
+      - name: Download
+        if: ${{ !inputs.TEST }}
         run: |
           cd ./wrt
           make download -j$(nproc)
