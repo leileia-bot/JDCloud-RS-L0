@@ -67,6 +67,14 @@ jobs:
           sed -i 's/KERNEL_SIZE := 6144k/KERNEL_SIZE := 12288k/g' "$MK"
           grep -n "KERNEL_SIZE" "$MK" | head
 
+      - name: 根修 target.mk（自带默认包 vs 上游的 2 选 1）
+        run: |
+          cd ./wrt
+          TM=./target/linux/qualcommax/ipq60xx/target.mk
+          # 源把 NSS wifi 驱动与 DD-WRT 固件写进默认包，改成上游原生固件
+          sed -i 's/ath11k-firmware-ipq6018-ddwrt kmod-nss-wifi-drv/ath11k-firmware-ipq6018/' "$TM"
+          cat "$TM"
+
       - name: Apply Config
         run: |
           cd ./wrt
@@ -77,13 +85,14 @@ jobs:
           sed -i 's/^CONFIG_PACKAGE_kmod-fs-exfat=y/# CONFIG_PACKAGE_kmod-fs-exfat is not set/' .config
           sed -i 's/^CONFIG_PACKAGE_kmod-nss-wifi-drv=y/# CONFIG_PACKAGE_kmod-nss-wifi-drv is not set/' .config
           sed -i 's/^CONFIG_ATH11K_NSS_WIFI=y/# CONFIG_ATH11K_NSS_WIFI is not set/' .config
-          sed -i 's/^CONFIG_ATH11K_NSS_WIFI=y/# CONFIG_ATH11K_NSS_WIFI is not set/' .config
+          sed -i 's/^CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt=y/# CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt is not set/' .config
           echo "==== 校验关键符号 ===="
           grep -E "^CONFIG_TARGET_qualcommax=y|jdcloud_re-ss-01=y|CONFIG_TARGET_ROOTFS_PARTSIZE|CONFIG_PACKAGE_luci-theme-vantage=y|CONFIG_PACKAGE_dnsmasq-full=y|CONFIG_PACKAGE_zram-swap=y|CONFIG_PACKAGE_kmod-usb-storage=y|CONFIG_PACKAGE_kmod-fs-ext4=y" .config || true
           echo "==== 冲突检查（必须全空） ===="
           grep -E "^CONFIG_PACKAGE_(kmod-qca-nss-dp|dnsmasq|kmod-fs-exfat|kmod-fs-ntfs3|kmod-nss-wifi-drv)=y|^CONFIG_ATH11K_NSS_WIFI=y" .config || echo "OK: 无冲突项"
           echo "==== WiFi 路径检查 ===="
-          grep -E "^CONFIG_PACKAGE_kmod-ath11k=y|^CONFIG_PACKAGE_kmod-ath11k-ahb=y|^CONFIG_PACKAGE_ipq-wifi-jdcloud_re-ss-01=y|^CONFIG_ATH11K_NSS_WIFI is not set" .config || echo "警告: WiFi 路径不全"
+          grep -E "^CONFIG_PACKAGE_kmod-ath11k=y|^CONFIG_PACKAGE_kmod-ath11k-ahb=y|^CONFIG_PACKAGE_ipq-wifi-jdcloud_re-ss-01=y|^CONFIG_PACKAGE_ath11k-firmware-ipq6018=y|^CONFIG_ATH11K_NSS_WIFI is not set" .config || echo "警告: WiFi 路径不全"
+          grep -q "^CONFIG_PACKAGE_kmod-nss-wifi-drv is not set" .config && echo "OK: NSS 驱动已移除" || echo "警告: NSS 驱动仍在"
           grep -c "^CONFIG_ATH11K_NSS_WIFI is not set" .config | sed 's/^/ATH11K_NSS_WIFI 已关闭行数: /'
 
       - name: Download
