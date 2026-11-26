@@ -1,0 +1,47 @@
+#!/bin/sh
+# 99-wifi-default —— 亚瑟 AX1800 Pro 首启无线默认值
+# 5G：CN / ch36 / HE80 / 23dBm   2.4G：CN / ch1 / HE20 / 20dBm
+# 原因：不设 country 时驱动回落默认域（界面显示 US），5G 会被 ACS 选到
+#       149-165 连续段并拼成 160MHz；2.4G 开 HE40 必然与邻居重叠。
+# 功率按国内限值收：2.4G 20dBm(100mW)、5.18G 23dBm。
+
+[ -f /etc/config/wireless ] || wifi config >/dev/null 2>&1
+
+# 等无线配置生成（首启时 radio 段可能尚未存在）
+i=0
+while [ $i -lt 15 ]; do
+	uci -q show wireless | grep -q "\.band=" && break
+	wifi config >/dev/null 2>&1
+	sleep 1
+	i=$((i + 1))
+done
+
+uci -q show wireless | grep -q "\.band=" || exit 0
+
+for r in $(uci show wireless | sed -nE "s/^wireless\.(radio[0-9]+)\.band=.*/\1/p"); do
+	band=$(uci -q get wireless.$r.band)
+	case "$band" in
+	5g)
+		uci set wireless.$r.country='CN'
+		uci set wireless.$r.channel='36'
+		uci set wireless.$r.htmode='HE80'
+		uci set wireless.$r.txpower='23'
+		uci set wireless.$r.disabled='0'
+		;;
+	2g)
+		uci set wireless.$r.country='CN'
+		uci set wireless.$r.channel='1'
+		uci set wireless.$r.htmode='HE20'
+		uci set wireless.$r.txpower='20'
+		uci set wireless.$r.disabled='0'
+		;;
+	esac
+done
+
+# AP 接口别残留 disabled
+for s in $(uci show wireless | sed -nE "s/^wireless\.(default_radio[0-9]+)=.*/\1/p"); do
+	uci set wireless.$s.disabled='0'
+done
+
+uci commit wireless
+exit 0
