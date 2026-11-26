@@ -75,11 +75,16 @@ jobs:
           make defconfig -j$(nproc)
           # defconfig 会把默认选的 exfat/nss 拉回来，这里二次压制
           sed -i 's/^CONFIG_PACKAGE_kmod-fs-exfat=y/# CONFIG_PACKAGE_kmod-fs-exfat is not set/' .config
-          sed -i 's/^CONFIG_PACKAGE_nss-wifi-drv=y/# CONFIG_PACKAGE_nss-wifi-drv is not set/' .config
+          sed -i 's/^CONFIG_PACKAGE_kmod-nss-wifi-drv=y/# CONFIG_PACKAGE_kmod-nss-wifi-drv is not set/' .config
+          sed -i 's/^CONFIG_ATH11K_NSS_WIFI=y/# CONFIG_ATH11K_NSS_WIFI is not set/' .config
+          sed -i 's/^CONFIG_ATH11K_NSS_WIFI=y/# CONFIG_ATH11K_NSS_WIFI is not set/' .config
           echo "==== 校验关键符号 ===="
           grep -E "^CONFIG_TARGET_qualcommax=y|jdcloud_re-ss-01=y|CONFIG_TARGET_ROOTFS_PARTSIZE|CONFIG_PACKAGE_luci-theme-vantage=y|CONFIG_PACKAGE_dnsmasq-full=y|CONFIG_PACKAGE_zram-swap=y|CONFIG_PACKAGE_kmod-usb-storage=y|CONFIG_PACKAGE_kmod-fs-ext4=y" .config || true
           echo "==== 冲突检查（必须全空） ===="
-          grep -E "^CONFIG_PACKAGE_(kmod-qca-nss-dp|dnsmasq|kmod-fs-exfat|kmod-fs-ntfs3|nss-wifi-drv)=y" .config || echo "OK: 无冲突项"
+          grep -E "^CONFIG_PACKAGE_(kmod-qca-nss-dp|dnsmasq|kmod-fs-exfat|kmod-fs-ntfs3|kmod-nss-wifi-drv)=y|^CONFIG_ATH11K_NSS_WIFI=y" .config || echo "OK: 无冲突项"
+          echo "==== WiFi 路径检查 ===="
+          grep -E "^CONFIG_PACKAGE_kmod-ath11k=y|^CONFIG_PACKAGE_kmod-ath11k-ahb=y|^CONFIG_PACKAGE_ipq-wifi-jdcloud_re-ss-01=y|^CONFIG_ATH11K_NSS_WIFI is not set" .config || echo "警告: WiFi 路径不全"
+          grep -c "^CONFIG_ATH11K_NSS_WIFI is not set" .config | sed 's/^/ATH11K_NSS_WIFI 已关闭行数: /'
 
       - name: Download
         if: ${{ !inputs.TEST }}
