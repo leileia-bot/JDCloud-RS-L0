@@ -73,10 +73,13 @@ jobs:
           [ -d ../files ] && cp -rf ../files/. ./
           cat "../Config/$WRT_CONFIG.txt" >> .config
           make defconfig -j$(nproc)
+          # defconfig 会把默认选的 exfat/nss 拉回来，这里二次压制
+          sed -i 's/^CONFIG_PACKAGE_kmod-fs-exfat=y/# CONFIG_PACKAGE_kmod-fs-exfat is not set/' .config
+          sed -i 's/^CONFIG_PACKAGE_nss-wifi-drv=y/# CONFIG_PACKAGE_nss-wifi-drv is not set/' .config
           echo "==== 校验关键符号 ===="
           grep -E "^CONFIG_TARGET_qualcommax=y|jdcloud_re-ss-01=y|CONFIG_TARGET_ROOTFS_PARTSIZE|CONFIG_PACKAGE_luci-theme-vantage=y|CONFIG_PACKAGE_dnsmasq-full=y|CONFIG_PACKAGE_zram-swap=y|CONFIG_PACKAGE_kmod-usb-storage=y|CONFIG_PACKAGE_kmod-fs-ext4=y" .config || true
           echo "==== 冲突检查（必须全空） ===="
-          grep -E "^CONFIG_PACKAGE_(kmod-qca-nss-dp|dnsmasq|kmod-fs-exfat|kmod-fs-ntfs3)=y" .config || echo "OK: 无冲突项"
+          grep -E "^CONFIG_PACKAGE_(kmod-qca-nss-dp|dnsmasq|kmod-fs-exfat|kmod-fs-ntfs3|nss-wifi-drv)=y" .config || echo "OK: 无冲突项"
 
       - name: Download
         if: ${{ !inputs.TEST }}
@@ -97,7 +100,9 @@ jobs:
           mkdir -p ./upload
           cp -f .config ./upload/Config-"$WRT_CONFIG"-"$WRT_DATE".txt
           find ./bin/targets -type f -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -f {} + 2>/dev/null || true
-          find ./bin/targets -type f -exec cp -f {} ./upload/ + 2>/dev/null || true
+          echo "==== bin/targets 实际内容 ===="
+          find ./bin/targets -maxdepth 3 -type f | head -20
+          find ./bin/targets -type f -exec cp -f {} ./upload/ \; 2>/dev/null || true
           ls -lh ./upload || true
 
       - name: Upload Build Log
@@ -106,6 +111,14 @@ jobs:
         with:
           name: build-log-${{ github.run_id }}
           path: ./wrt/logs/
+
+      - name: Upload Images Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: images-${{ github.run_id }}
+          path: ./wrt/upload/
+          retention-days: 7
 
       - name: Release
         if: ${{ success() && !inputs.TEST }}
