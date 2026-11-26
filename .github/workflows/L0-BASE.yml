@@ -20,6 +20,11 @@ on:
           - ddwrt212
         default: qca25
         required: true
+      ALL_KMODS:
+        description: '全量内核模块（编进固件，不发独立 kmod 包）'
+        type: boolean
+        default: false
+        required: false
 
 env:
   SOURCE_REPO: https://github.com/VIKINGYFY/immortalwrt.git
@@ -111,6 +116,9 @@ jobs:
             echo "# CONFIG_PACKAGE_ath11k-firmware-ipq6018 is not set" >> .config
             echo "CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt=y" >> .config
           fi
+          if [ "${{ inputs.ALL_KMODS }}" = "true" ]; then
+            echo "CONFIG_ALL_KMODS=y" >> .config
+          fi
           make defconfig -j$(nproc)
           # defconfig 会把默认选的 nss 驱动拉回来，这里二次压制
           sed -i 's/^CONFIG_PACKAGE_kmod-nss-wifi-drv=y/# CONFIG_PACKAGE_kmod-nss-wifi-drv is not set/' .config
@@ -130,8 +138,26 @@ jobs:
           grep -q "^CONFIG_PACKAGE_kmod-nss-wifi-drv=y" .config && echo "警告: NSS 驱动仍在" || echo "OK: NSS 驱动未选中"
           grep -c "^CONFIG_ATH11K_NSS_WIFI is not set" .config | sed 's/^/ATH11K_NSS_WIFI 已关闭行数: /'
 
-      - name: Download
-        if: ${{ !inputs.TEST }}
+      - name: 冲突筛查（仅 TEST）
+        if: ${{ inputs.TEST }}
+        run: |
+          cd ./wrt
+          echo "=== [1] kmod 包定义总数 ==="
+          grep -rh "define Package/kmod-" package feeds 2>/dev/null | sed 's/.*define Package\//  /' | sort -u | wc -l
+          echo "=== [2] 显式 CONFLICTS / PROVIDES 声明 ==="
+          grep -rn "CONFLICTS:=" package feeds 2>/dev/null | sed 's/\/Makefile:/\t/' | head -60 || echo "无"
+          echo "=== [3] 重跑 defconfig 抓警告 ==="
+          make defconfig 2>&1 | tee /tmp/defcfg.log >/dev/null
+          grep -nE "WARNING|duplicate|already defined|conflict|CONFLICT|not available|missing dependency|recursive|Circular" /tmp/defcfg.log | head -80 || echo "无警告"
+          echo "=== [4] 选取结果 ==="
+          echo "选中 kmod : $(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)"
+          echo "未选 kmod : $(grep -c '^# CONFIG_PACKAGE_kmod.* is not set' .config)"
+          echo "=== [5] 未选 kmod 清单（被挤压/被顶掉的都在这） ==="
+          grep '^# CONFIG_PACKAGE_kmod.* is not set' .config | sed 's/^# CONFIG_PACKAGE_//;s/ is not set//' | sort | head -300
+          echo "=== [6] 体积预估 ==="
+          grep -E "^CONFIG_TARGET_ROOTFS_PARTSIZE" .config || true
+
+
         run: |
           cd ./wrt
           make download -j$(nproc)
