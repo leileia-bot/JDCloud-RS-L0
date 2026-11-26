@@ -218,7 +218,6 @@ jobs:
 
       - name: Compile
         if: ${{ !inputs.TEST }}
-        timeout-minutes: 300
         run: |
           cd ./wrt
           set -o pipefail
@@ -313,7 +312,7 @@ jobs:
             刷机用 *sysupgrade.bin（保留配置升级）或 *factory.bin（首次/救砖）。
 
       - name: Release Packages
-        if: ${{ success() && !inputs.TEST && !inputs.ALL_KMODS && hashFiles('./wrt/upload/*.tar.gz') != '' }}
+        if: ${{ success() && !inputs.TEST && hashFiles('./wrt/upload/*.tar.gz') != '' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: PKG-${{ env.WRT_DATE }}
