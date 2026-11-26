@@ -1,0 +1,39 @@
+#!/bin/sh
+# /etc/hotplug.d/block/20-usb-repo
+# 作用：U 盘插入并挂载后，把路由器的 apk 源指向 U 盘里的离线仓库。
+#       不安装、不卸载、不升级任何包，只改 /etc/apk/repositories。
+
+[ "$SUBSYSTEM" = "block" ] || exit 0
+case "$ACTION" in add|change) ;; *) exit 0 ;; esac
+
+sleep 3
+
+REPO=""
+for m in /mnt/* /tmp/mnt/* /media/*; do
+    [ -d "$m/repo" ] || continue
+    # 优先带仓库标记的目录结构
+    if [ -d "$m/repo/base" ] || [ -d "$m/repo/kmods" ]; then
+        REPO="$m/repo"
+        break
+    fi
+done
+
+[ -n "$REPO" ] || exit 0
+
+tmp=/tmp/apk.repositories
+: > "$tmp"
+for d in base libs luci packages; do
+    [ -d "$REPO/$d" ] && echo "file://$REPO/$d" >> "$tmp"
+done
+# kmods 可能带版本子目录（kmods/<vermagic>/），一律挂上
+for d in "$REPO"/kmods "$REPO"/kmods/*; do
+    [ -d "$d" ] && echo "file://$d" >> "$tmp"
+done
+
+# 没有任何有效目录就不覆盖现有源
+[ -s "$tmp" ] || { rm -f "$tmp"; exit 0; }
+
+cp -f "$tmp" /etc/apk/repositories
+rm -f "$tmp"
+logger -t usb-repo "离线源已指向 $REPO ($(wc -l < /etc/apk/repositories) 行)"
+exit 0
