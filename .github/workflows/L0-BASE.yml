@@ -110,13 +110,25 @@ jobs:
         if: always()
         run: |
           cd ./wrt
-          mkdir -p ./upload
-          cp -f .config ./upload/Config-"$WRT_CONFIG"-"$WRT_DATE".txt
-          find ./bin/targets -type f -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -f {} + 2>/dev/null || true
-          echo "==== bin/targets 实际内容 ===="
-          find ./bin/targets -maxdepth 3 -type f | head -20
-          find ./bin/targets -type f -exec cp -f {} ./upload/ \; 2>/dev/null || true
-          ls -lh ./upload || true
+          rm -rf ./upload && mkdir -p ./upload/firmware ./upload/packages
+          cp -f .config ./upload/firmware/Config-"$WRT_CONFIG"-"$WRT_DATE".txt
+
+          # 固件本体：镜像 + manifest（单独一处，不再混包）
+          find ./bin/targets -type f \( -name "*.bin" -o -name "*.itb" -o -name "*.img" -o -name "*.manifest" \) \
+            -exec cp -f {} ./upload/firmware/ \;
+
+          # 安装包：.apk 单独打包成一个压缩包
+          find ./bin/targets -type f -name "*.apk" -exec cp -f {} ./upload/packages/ \;
+          find ./staging_dir/packages -type f -name "packages.adb" -exec cp -f {} ./upload/packages/ \; 2>/dev/null || true
+          if [ -n "$(ls -A ./upload/packages 2>/dev/null)" ]; then
+            tar -czf ./upload/packages-"$WRT_CONFIG"-"$WRT_DATE".tar.gz -C ./upload/packages .
+          fi
+
+          echo "==== 固件 ===="
+          ls -lh ./upload/firmware || true
+          echo "==== 安装包 ===="
+          ls -1 ./upload/packages | wc -l
+          ls -lh ./upload/*.tar.gz || true
 
       - name: Upload Build Log
         if: failure()
@@ -129,16 +141,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: images-${{ github.run_id }}
-          path: ./wrt/upload/
+          name: firmware-${{ github.run_id }}
+          path: ./wrt/upload/firmware/
           retention-days: 7
 
-      - name: Release
+      - name: Release Firmware
         if: ${{ success() && !inputs.TEST }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: L0-${{ env.WRT_DATE }}
-          files: ./wrt/upload/*
+          files: ./wrt/upload/firmware/*
           body: |
             京东云亚瑟 AX1800 Pro · L0 底座（无 NSS）
 
@@ -149,3 +161,16 @@ jobs:
             NSS：全部关闭
 
             刷机用 *sysupgrade.bin（保留配置升级）或 *factory.bin（首次/救砖）。
+
+      - name: Release Packages
+        if: ${{ success() && !inputs.TEST && hashFiles('./wrt/upload/*.tar.gz') != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: PKG-${{ env.WRT_DATE }}
+          files: ./wrt/upload/*.tar.gz
+          body: |
+            京东云亚瑟 AX1800 Pro · 安装包集合（apk-tools 格式）
+
+            内核：${{ env.WRT_KVER }}
+            平台：qualcommax / ipq60xx / jdcloud_re-ss-01
+            说明：解开即 U 盘 repo 目录结构；kmod 与固件同批产出，换固件后需重下。
