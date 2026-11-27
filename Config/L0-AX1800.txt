@@ -57,3 +57,9 @@ CONFIG_PACKAGE_zram-swap=y
 # daed/dae 上游 Makefile: +ca-bundle +kmod-sched-core +kmod-sched-bpf +kmod-xdp-sockets-diag +kmod-veth
 # sched-core/sched-bpf/veth 已由全量 kmod 与保留名单覆盖；xsk_diag 之前没被选中，显式钉上
 CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+
+# ---------- 按设备带宽分配：trafficshaper（UCI 配置，上游无 LuCI 页面） ----------
+# 依赖：tc(tc-tiny 已有) + nftables + kmod-sched-core + kmod-ifb + kmod-sched-cake
+#       + kmod-sched-connmark（原先被我剔了，这里撤回并显式钉上）
+CONFIG_PACKAGE_kmod-sched-connmark=y
+CONFIG_PACKAGE_trafficshaper=y
