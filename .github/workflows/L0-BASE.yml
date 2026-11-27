@@ -277,6 +277,13 @@ jobs:
             echo "失败包：$FAILPKG"
             if [ -n "$FAILPKG" ]; then
               make "$FAILPKG/compile" V=s 2>&1 | tee logs/pkg-fail.log | tail -150 || true
+            else
+              echo "==== 非包失败（target/linux 或 image 阶段），原地 V=s 复现 ===="
+              make target/linux/compile V=s 2>&1 | tee logs/target-fail.log | tail -200 || true
+              echo "==== 内核构建线索 ===="
+              grep -nE "too big|pahole|BTF|BTFIDS|vmlinux|Error [0-9]" logs/target-fail.log | tail -40 || true
+              echo "==== 内核日志尾部 ===="
+              tail -120 logs/target-fail.log || true
             fi
             echo "==== 错误上下文 ===="
             grep -nE "Error [0-9]+|error:|ERROR:|No rule to make|duplicate package|already defined" /tmp/compile.log | tail -40 || true
