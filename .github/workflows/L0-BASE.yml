@@ -79,12 +79,14 @@ jobs:
           cp -r /tmp/vantage/luci-theme-vantage ./wrt/package/
           test -f ./wrt/package/luci-theme-vantage/Makefile
 
-      - name: Kernel Slot（保持设备原生，不改 12M）
+      - name: Kernel Slot（12M，设备实测可用）
         run: |
           cd ./wrt
           MK=./target/linux/qualcommax/image/ipq60xx.mk
-          echo "==== 保持源码原生内核槽（本轮只取实测数据，不做 12M 放宽） ===="
+          echo "==== 内核槽 → 12288k（这块板的内核区实测 12M 可用，2.5 版固件已验证） ===="
+          sed -i -E 's/(KERNEL_SIZE\s*:=\s*)[0-9]+k/\112288k/' "$MK"
           grep -n "KERNEL_SIZE" "$MK" | head
+          grep -q "KERNEL_SIZE := 12288k" "$MK" || { echo "失败: 内核槽没改成 12288k"; exit 1; }
 
       - name: 无线固件包（${{ inputs.WIFI_FW }}）
         run: |
@@ -159,7 +161,12 @@ jobs:
           # 明确保留（不要往 TRIM 里加）：dm（Docker device-mapper）、md（软 RAID）、
           #   cifs（挂 SMB）、nfs（挂 NFS）、btrfs/f2fs（群晖/手机盘直插识别）、
           #   watchdog（死机自重启）、hwmon（IPQ6000 温度读取）
-          TRIM_RE='kmod-(dvb|bluetooth|bt|hid|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|drbd|xfs|jfs|hfs|reiserfs|9p|erofs|gpu|drm|pps|ptp|gpio|i2c|spi|rc-|ir-)'
+          TRIM_RE='kmod-(dvb|bluetooth|bt|hid|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|drbd|xfs|jfs|hfs|reiserfs|9p|erofs|gpu|drm|pps|ptp|rc-|ir-)'
+          # 注意：gpio / i2c / spi 不在 TRIM 里（会引入大量 .ko 依赖；kmod-igb 缺 i2c-algo-bit.ko
+          # 就是这么炸的），改用整族黑名单精确剔除设备驱动本身
+          # 非本机 PCIe / 服务器网卡整族（亚瑟无 PCIe 槽，有线走内置 PHY）：
+          # 592 个里挑出 60 个常见卡，一起剔掉能顺带消掉 igb/ixgbe 这类"驱动在、依赖没了"的连环报错
+          NIC_RE='kmod-(3c59x|8139cp|8139too|alx|atl1|atl1c|atl1e|atl2|atlantic|b44|be2net|bnx2|bnx2x|bnxt-en|dm9000|e100|e1000|e1000e|enc28j60|et131x|ethoc|forcedeth|i40e|iavf|ice|igb|igc|ixgbe|ixgbevf|lan743x|mlx4-core|mlx5-core|mlxfw|natsemi|ne2k-pci|niu|pcnet32|qede|qlcnic|r6040|r8101|r8125|r8126|r8127|r8168|r8169|renesas-rzn-pcs|sfc|sfc-falcon|sfc-siena|sis190|sis900|skge|sky2|solos-pci|tg3|tulip|via-rhine|via-velocity|vmxnet3)'
           trim_uncommon() {
             echo "==== TRIM：剔除不常用设备族 ===="
             local before after
@@ -179,6 +186,8 @@ jobs:
             # 它们都提供 ath10k_core.ko，只按名字逐个剔会漏掉变体 → 安装时 file overwrite 冲突
             # （本轮真因：kmod-ath10k-smallbuffers / -sdio 试图覆盖 kmod-ath10k-ct-smallbuffers 的 .ko）
             sed -i -E 's/^CONFIG_PACKAGE_(kmod-ath10k[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # 非本机 PCIe 网卡整族（没有 PCIe 槽就必须全族一起走，不能只走一半）
+            sed -i -E 's/^CONFIG_PACKAGE_('"${NIC_RE}"')[A-Za-z0-9._-]*=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             for p in $BLACKLIST; do
               sed -i "s/^CONFIG_PACKAGE_${p}=[my]\$/# CONFIG_PACKAGE_${p} is not set/" .config
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config || \
@@ -254,6 +263,13 @@ jobs:
           fi
           grep -q "^CONFIG_PACKAGE_kmod-nss-wifi-drv=y" .config && echo "警告: NSS 驱动仍在" || echo "OK: NSS 驱动未选中"
           grep -c "^CONFIG_ATH11K_NSS_WIFI is not set" .config | sed 's/^/ATH11K_NSS_WIFI 已关闭行数: /'
+
+      - name: 整族依赖闭环（剔除依赖方，防打包缺 .ko）
+        run: |
+          cd ./wrt
+          python3 "${{ github.workspace }}/Scripts/kmod-closure.py"
+          echo "闭环后 kmod 内建: $(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=y' .config)"
+          echo "闭环后 kmod 独立: $(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=m' .config)"
 
       - name: 冲突筛查（仅 TEST）
         if: ${{ inputs.TEST }}
@@ -365,7 +381,11 @@ jobs:
           for d in $BDL/arch/arm64/boot/dts/qcom/*jdcloud*.dtb; do
             [ -f "$d" ] && { DSZ=$(stat -c%s "$d"); echo "实测: dtb $(basename $d) $((DSZ/1024)) KiB"; break; }
           done
-          [ -f "$K" ] && echo "实测合计: $(( (KSZ+DSZ)/1024 )) KiB（设备原生槽以 mk 里 KERNEL_SIZE 为准，本步不拦）"
+          if [ -f "$K" ]; then
+            TOT=$(( (KSZ+DSZ)/1024 ))
+            echo "槽对比: 实测合计 ${TOT} KiB / 6M槽 6144 KiB / 12M槽 12288 KiB"
+            if [ "$TOT" -le 6144 ]; then echo "判定: 装得进 6M 原生槽"; elif [ "$TOT" -le 12288 ]; then echo "判定: 6M 装不下，12M 装得下（余 $((12288-TOT)) KiB）"; else echo "判定: 超 12M 上限 $((TOT-12288)) KiB，需要再精简"; fi
+          fi
 
           VML=$(find "$BDL" -maxdepth 1 -name 'vmlinux' | head -1)
           if [ -f "$VML" ]; then
