@@ -52,3 +52,8 @@ CONFIG_PACKAGE_kmod-fs-ntfs3=n
 
 # ---------- 内存：ZRAM（默认即内存一半，不写死小值） ----------
 CONFIG_PACKAGE_zram-swap=y
+
+# ---------- dae/daed eBPF 运行时依赖（apk 的 Depends 会逐个查） ----------
+# daed/dae 上游 Makefile: +ca-bundle +kmod-sched-core +kmod-sched-bpf +kmod-xdp-sockets-diag +kmod-veth
+# sched-core/sched-bpf/veth 已由全量 kmod 与保留名单覆盖；xsk_diag 之前没被选中，显式钉上
+CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
