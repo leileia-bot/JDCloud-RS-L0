@@ -148,6 +148,13 @@ jobs:
           #   ipt-chaos/delude/tarpit（xtables-addons 反扫描三件套，chaos 依赖 delude+tarpit，
           #     必须整组一起剔）、ipt-lua/psd/lscan/asn：无任何向外反向依赖，用户态
           #     iptables-mod-* 全部未选中，iptables 二进制本身也没进固件 → 纯死重
+          #   crypto-hw-padlock/hifn-795x/atmel：x86 VIA CPU / PCIe 加密卡 / I2C 加密芯片，
+          #     亚瑟三样硬件都没有，反向依赖 0
+          #   crypto-md4/rmd160/fcrypt/pcbc/michael-mic/arc4：冷门或已废弃算法，反向依赖 0；
+          #     !! 注意 arc4 砍的是 CONFIG_CRYPTO_ARC4（AF_ALG 封装），mac80211 select 的是
+          #     CRYPTO_LIB_ARC4（内核 lib/arc4.c），WiFi WEP/TKIP 不受影响
+          #   crypto-chacha20poly1305：与 crypto-lib-chacha20poly1305（WireGuard 实际使用者）重复
+          #   kmod-cryptodev：/dev/crypto 用户态接口，固件内无任何程序使用
           BLACKLIST="kmod-nss-wifi-drv kmod-fs-afs kmod-fs-ntfs3 r8152 \
             kmod-ath10k kmod-ath10k-ct \
             wpad-basic-mbedtls wpad-basic-wolfssl wpad-wolfssl \
@@ -166,7 +173,11 @@ jobs:
             kmod-usb-net-lan78xx kmod-usb-net-kaweth kmod-usb-net-pegasus \
             kmod-usb-hid-mcp2221 \
             kmod-ipt-chaos kmod-ipt-delude kmod-ipt-tarpit \
-            kmod-ipt-lua kmod-ipt-psd kmod-ipt-lscan kmod-ipt-asn"
+            kmod-ipt-lua kmod-ipt-psd kmod-ipt-lscan kmod-ipt-asn \
+            kmod-crypto-hw-padlock kmod-crypto-hw-hifn-795x kmod-crypto-hw-atmel \
+            kmod-crypto-md4 kmod-crypto-rmd160 kmod-crypto-fcrypt \
+            kmod-crypto-pcbc kmod-crypto-michael-mic kmod-crypto-arc4 \
+            kmod-crypto-chacha20poly1305 kmod-cryptodev"
 
           # ==== TRIM：剔除"路由器上用不到"的整族驱动，给 BTF 腾内核槽空间 ====
           # 只砍与网络/存储/代理链路无关的设备族；网络类一个不动。
