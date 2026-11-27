@@ -156,7 +156,7 @@ jobs:
             ath10k-firmware-qca9984 ath10k-firmware-qca4019 ath10k-firmware-qca9888 \
             ath10k-firmware-qca6174 ath10k-firmware-qca9377 \
             kmod-usb-net-rtl8152-vendor \
-            kmod-lkdtm kmod-pktgen kmod-net-selftests kmod-bpf-test \
+            kmod-lkdtm kmod-pktgen kmod-bpf-test \
             kmod-crypto-test kmod-mtdtests \
             v4l2loopback dmx_usb_module"
 
@@ -165,7 +165,7 @@ jobs:
           # 明确保留（不要往 TRIM 里加）：dm（Docker device-mapper）、md（软 RAID）、
           #   cifs（挂 SMB）、nfs（挂 NFS）、btrfs/f2fs（群晖/手机盘直插识别）、
           #   watchdog（死机自重启）、hwmon（IPQ6000 温度读取）
-          TRIM_RE='kmod-(dvb|bluetooth|bt|hid|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|drbd|xfs|jfs|hfs|reiserfs|9p|erofs|gpu|drm|pps|ptp|rc-|ir-)'
+          TRIM_RE='kmod-(dvb|bluetooth|bt|hid|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|drbd|xfs|jfs|hfs|reiserfs|9p|erofs|gpu|drm|pps|rc-|ir-)'
           # 注意：gpio / i2c / spi 不在 TRIM 里（会引入大量 .ko 依赖；kmod-igb 缺 i2c-algo-bit.ko
           # 就是这么炸的），改用整族黑名单精确剔除设备驱动本身
           # 非本机 PCIe / 服务器网卡整族（亚瑟无 PCIe 槽，有线走内置 PHY）：

@@ -19,7 +19,7 @@ PROTECT = re.compile(
     r'fs-(ext4|vfat|exfat|f2fs|btrfs|cifs|nfs|nfsd|nls.*|fat.*|msdos.*|ntfs.*)|'
     r'watchdog.*|hwmon.*|thermal.*|i2c-core|i2c-algo-bit|i2c-gpio|spi.*|gpio.*|pinctrl.*|'
     r'ppp.*|pppoe|sched.*|lib-(crc|zstd|xxhash)|nls-.*|leds.*|button.*|input-core|'
-    r'phy-.*|mdio.*|switch.*|dsa-.*|regmap.*|mux.*|pcs-.*|sfp.*|'
+    r'phy-.*|mdio.*|switch.*|dsa.*|regmap.*|mux.*|pcs-.*|sfp.*|ptp|net-selftests|'
     r'block.*|mbcache|loop|nbd|scsi-core|sd-mod|usb-serial.*|tun|wireguard|vxlan|veth|bonding|bridge)$'
 )
 
