@@ -135,7 +135,7 @@ jobs:
           # ==== 全量 kmod：m → y，把模块编进镜像，不再单独发 kmod 包 ====
           # 排除名单（二选一已按"底座已验证的那套"定案，含关联包）
           #   kmod-nss-wifi-drv   NSS 必须关（daed/透明代理要过 netfilter）
-          #   kmod-fs-afs/ntfs3   不用；ntfs3 与内核内置重叠
+          #   kmod-fs-afs         不用（分布式网络文件系统，本机无场景）
           #   r8152               与 kmod-usb-net-rtl8152 同类二选一 → 留后者（走 usb-net 框架）
           #   kmod-ath10k / -ct   设备是 ath11k，ath10k 两套整族剔除（含固件层不选）
           #   wpad 变体族         只留 wpad-openssl，避免加密库全家桶互斥
@@ -168,7 +168,7 @@ jobs:
           #   ext4/vfat/msdos/exfat/f2fs/btrfs/cifs/ksmbd/nfs/squashfs 全部保留
           # nls 编码（14 个）：中欧/西里尔/希腊/希伯来/冰岛/日文SJIS/繁体BIG5 代码页
           #   保留 base/utf8/cp437/iso8859-1/iso8859-15/ucs2-utils/cp936（GBK）
-          BLACKLIST="kmod-nss-wifi-drv kmod-fs-afs kmod-fs-ntfs3 r8152 \
+          BLACKLIST="kmod-nss-wifi-drv kmod-fs-afs r8152 \
             kmod-ath10k kmod-ath10k-ct \
             wpad-basic-mbedtls wpad-basic-wolfssl wpad-wolfssl \
             firewall apk-mbedtls procd-selinux busybox-selinux \
@@ -362,7 +362,7 @@ jobs:
           echo "==== 校验关键符号 ===="
           grep -E "^CONFIG_TARGET_qualcommax=y|jdcloud_re-ss-01=y|CONFIG_TARGET_ROOTFS_PARTSIZE|CONFIG_PACKAGE_luci-theme-vantage=y|CONFIG_PACKAGE_dnsmasq-full=y|CONFIG_PACKAGE_zram-swap=y|CONFIG_PACKAGE_kmod-usb-storage=y|CONFIG_PACKAGE_kmod-fs-ext4=y" .config || true
           echo "==== 冲突检查（必须全空） ===="
-          grep -E "^CONFIG_PACKAGE_(dnsmasq|kmod-fs-ntfs3|kmod-nss-wifi-drv)=y|^CONFIG_ATH11K_NSS_WIFI=y" .config || echo "OK: 无冲突项"
+          grep -E "^CONFIG_PACKAGE_(dnsmasq|kmod-nss-wifi-drv)=y|^CONFIG_ATH11K_NSS_WIFI=y" .config || echo "OK: 无冲突项"
           echo "==== WiFi 路径检查 ===="
           grep -E "^CONFIG_PACKAGE_kmod-ath11k=y|^CONFIG_PACKAGE_kmod-ath11k-ahb=y|^CONFIG_PACKAGE_ipq-wifi-jdcloud_re-ss-01=y|^CONFIG_ATH11K_NSS_WIFI is not set" .config || echo "警告: 公共 WiFi 路径不全"
           if [ "$MODE" = "qca25" ]; then
