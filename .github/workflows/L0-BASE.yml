@@ -201,14 +201,15 @@ jobs:
             kmod-nls-cp1250 kmod-nls-cp1251 kmod-nls-cp775 kmod-nls-cp850 \
             kmod-nls-cp852 kmod-nls-cp862 kmod-nls-cp864 kmod-nls-cp866 \
             kmod-nls-cp932 kmod-nls-cp950 kmod-nls-iso8859-2 kmod-nls-iso8859-6 \
-            kmod-nls-iso8859-8 kmod-nls-iso8859-13 kmod-nls-koi8r"
+            kmod-nls-iso8859-8 kmod-nls-iso8859-13 kmod-nls-koi8r \
+            kmod-fs-9p kmod-hci-uart kmod-usb-audio"
 
           # ==== TRIM：剔除"路由器上用不到"的整族驱动，给 BTF 腾内核槽空间 ====
           # 只砍与网络/存储/代理链路无关的设备族；网络类一个不动。
           # 明确保留（不要往 TRIM 里加）：dm（Docker device-mapper）、md（软 RAID）、
           #   cifs（挂 SMB）、nfs（挂 NFS）、btrfs/f2fs（群晖/手机盘直插识别）、
           #   watchdog（死机自重启）、hwmon（IPQ6000 温度读取）
-          TRIM_RE='kmod-(dvb|bluetooth|bt|hid|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|drbd|xfs|jfs|hfs|reiserfs|9p|erofs|gpu|drm|pps|rc-|ir-|iio|industrialio|input-adc-keys)'
+          TRIM_RE='kmod-(dvb|bluetooth|bt|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|drbd|xfs|jfs|hfs|reiserfs|9p|erofs|gpu|drm|rc-|ir-|iio|industrialio|input-adc-keys)'
           # 注意：gpio / i2c / spi 不在 TRIM 里（会引入大量 .ko 依赖；kmod-igb 缺 i2c-algo-bit.ko
           # 就是这么炸的），改用整族黑名单精确剔除设备驱动本身
           # 非本机 PCIe / 服务器网卡整族（亚瑟无 PCIe 槽，有线走内置 PHY）：
@@ -359,6 +360,11 @@ jobs:
           else
             grep -q "^CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt=y" .config && echo "OK: DD-WRT 2.12 已选中" || { echo "失败: ddwrt 固件未选中"; exit 1; }
           fi
+          # 依赖链闭环强制钉死：ptp→pps（pps_core.ko 缺了 kmod-ptp 打不出来）、usb-hid→hid 核心
+          for p in kmod-pps kmod-ptp kmod-hid kmod-hid-generic kmod-usb-hid; do
+            grep -q "^CONFIG_PACKAGE_${p}=y" .config || { echo "失败: $p 丢失（有保留包依赖它）"; exit 1; }
+          done
+          echo "OK: pps/ptp/hid/usb-hid 全在"
           grep -q "^CONFIG_PACKAGE_kmod-nss-wifi-drv=y" .config && echo "警告: NSS 驱动仍在" || echo "OK: NSS 驱动未选中"
           grep -c "^CONFIG_ATH11K_NSS_WIFI is not set" .config | sed 's/^/ATH11K_NSS_WIFI 已关闭行数: /'
 
