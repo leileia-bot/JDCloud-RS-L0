@@ -332,6 +332,15 @@ jobs:
           LIM=$((12288*1024))
           BDL=$(find build_dir -maxdepth 1 -type d -name 'linux-qualcommax_ipq60xx' | head -1)
           echo "build_dir: $BDL"; [ -n "$BDL" ] || { echo "失败: 找不到内核 build_dir"; exit 1; }
+          # 内核特性统计（内核真实 .config，不是 OpenWrt 的 KERNEL_ 开关层）
+          KC=$(find "$BDL" -maxdepth 2 -name '.config' | head -1)
+          if [ -f "$KC" ]; then
+            echo "内核 .config: $KC"
+            echo "内核特性 =y : $(grep -c '^CONFIG_[A-Za-z0-9_]*=y' "$KC")"
+            echo "内核特性 =m : $(grep -c '^CONFIG_[A-Za-z0-9_]*=m' "$KC")"
+            echo "内核 条目总数: $(grep -c '^CONFIG_' "$KC")"
+          fi
+          echo "kmod 内建 =y : $(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=y' .config)"
 
           size_check() {
             local K=$BDL/arch/arm64/boot/Image.gz
