@@ -157,7 +157,8 @@ jobs:
             ath10k-firmware-qca6174 ath10k-firmware-qca9377 \
             kmod-usb-net-rtl8152-vendor \
             kmod-lkdtm kmod-pktgen kmod-net-selftests kmod-bpf-test \
-            kmod-crypto-test kmod-mtdtests"
+            kmod-crypto-test kmod-mtdtests \
+            v4l2loopback dmx_usb_module"
 
           # ==== TRIM：剔除"路由器上用不到"的整族驱动，给 BTF 腾内核槽空间 ====
           # 只砍与网络/存储/代理链路无关的设备族；网络类一个不动。
