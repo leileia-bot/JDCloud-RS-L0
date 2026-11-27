@@ -57,7 +57,8 @@ jobs:
             curl device-tree-compiler dos2unix file flex g++-multilib gawk gcc-multilib \
             genisoimage gettext git jq libelf-dev libncurses-dev libssl-dev lld llvm \
             ninja-build patch perl pkgconf python3 python3-dev python3-pyelftools \
-            rsync swig unzip wget xz-utils zlib1g-dev zstd
+            rsync swig unzip wget xz-utils zlib1g-dev zstd \
+            dwarves
           sudo timedatectl set-timezone Asia/Shanghai
 
       - name: Clone Source
@@ -189,6 +190,17 @@ jobs:
             grep -q "^CONFIG_PACKAGE_nftables-json=y" .config || {
               echo "失败: nftables-json 未选中 → dnsmasq-full 会缺 libnftables.so.1"; exit 1; }
           fi
+          # ==== BTF：把 .BTF 段编进内核（占用 12M 内核槽，超限由下一步校验拦）====
+          # 注意：BTF 需要“完整”调试信息，REDUCED 会让 pahole 直接失败
+          sed -i 's/^# CONFIG_KERNEL_DEBUG_INFO is not set/CONFIG_KERNEL_DEBUG_INFO=y/' .config
+          sed -i 's/^CONFIG_KERNEL_DEBUG_INFO_NONE=y/# CONFIG_KERNEL_DEBUG_INFO_NONE is not set/' .config
+          sed -i 's/^CONFIG_KERNEL_DEBUG_INFO_REDUCED=y/# CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set/' .config
+          sed -i 's/^# CONFIG_KERNEL_DEBUG_INFO_BTF is not set/CONFIG_KERNEL_DEBUG_INFO_BTF=y/' .config
+          grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config || echo 'CONFIG_KERNEL_DEBUG_INFO_BTF=y' >> .config
+          echo "BTF 开关: $(grep -c '^CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config) 行; REDUCED 残留: $(grep -c '^CONFIG_KERNEL_DEBUG_INFO_REDUCED=y' .config) 行"
+          grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config || { echo "失败: BTF 没打开"; exit 1; }
+          [ "$(grep -c '^CONFIG_KERNEL_DEBUG_INFO_REDUCED=y' .config)" = "0" ] || { echo "失败: DEBUG_INFO_REDUCED 仍开，pahole 会失败"; exit 1; }
+
           echo "==== 校验关键符号 ===="
           grep -E "^CONFIG_TARGET_qualcommax=y|jdcloud_re-ss-01=y|CONFIG_TARGET_ROOTFS_PARTSIZE|CONFIG_PACKAGE_luci-theme-vantage=y|CONFIG_PACKAGE_dnsmasq-full=y|CONFIG_PACKAGE_zram-swap=y|CONFIG_PACKAGE_kmod-usb-storage=y|CONFIG_PACKAGE_kmod-fs-ext4=y" .config || true
           echo "==== 冲突检查（必须全空） ===="
@@ -269,6 +281,40 @@ jobs:
             tail -60 /tmp/compile.log
             exit 1
           fi
+
+      - name: 内核槽校验（BTF + 12M）
+        run: |
+          cd ./wrt
+          BDL=$(find build_dir -maxdepth 1 -type d -name 'linux-qualcommax_ipq60xx' | head -1)
+          echo "build_dir: $BDL"; [ -n "$BDL" ] || { echo "失败: 找不到内核 build_dir"; exit 1; }
+
+          VML=$(find "$BDL" -maxdepth 1 -name 'vmlinux' | head -1)
+          [ -f "$VML" ] || { echo "失败: 找不到 vmlinux"; exit 1; }
+          echo "==== BTF 段检查 ===="
+          if readelf -SW "$VML" | grep -qE '\[ *[0-9]+\] \.BTF'; then
+            readelf -SW "$VML" | grep -E '\.BTF' | head -4
+            echo "OK: vmlinux 已带 .BTF 段（大小见上方 Size 列）"
+          else
+            echo "失败: vmlinux 没有 .BTF 段，BTF 未生效"; exit 1
+          fi
+
+          echo "==== 内核槽体积核算（上限 12288 KiB）===="
+          K=arch/arm64/boot/Image.gz
+          [ -f "$BDL/$K" ] || K=arch/arm64/boot/Image
+          [ -f "$BDL/$K" ] || { echo "失败: 找不到压缩内核 Image/Image.gz"; exit 1; }
+          KSZ=$(stat -c%s "$BDL/$K")
+          DSZ=0
+          for d in arch/arm64/boot/dts/qcom/*jdcloud*.dtb; do
+            [ -f "$BDL/$d" ] && { DSZ=$(stat -c%s "$BDL/$d"); echo "dtb: $(basename $d) $DSZ bytes"; break; }
+          done
+          TOT=$((KSZ+DSZ)); LIM=$((12288*1024))
+          echo "kernel: $K = $KSZ bytes ($((KSZ/1024)) KiB)"
+          echo "dtb: $DSZ bytes"
+          echo "合计: $TOT bytes ($((TOT/1024)) KiB) / 上限 $LIM bytes (12288 KiB) / 余量 $(( (LIM-TOT)/1024 )) KiB"
+          if [ "$TOT" -gt "$LIM" ]; then
+            echo "失败: 内核+dtb 超出 12M 内核槽（超 $(( (TOT-LIM)/1024 )) KiB）"; exit 1
+          fi
+          echo "OK: 内核槽未超限"
 
       - name: 断言无线固件已落地（${{ inputs.WIFI_FW }}）
         if: ${{ !inputs.TEST }}
