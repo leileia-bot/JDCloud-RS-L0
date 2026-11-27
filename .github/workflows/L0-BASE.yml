@@ -200,6 +200,15 @@ jobs:
           echo "BTF 开关: $(grep -c '^CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config) 行; REDUCED 残留: $(grep -c '^CONFIG_KERNEL_DEBUG_INFO_REDUCED=y' .config) 行"
           grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config || { echo "失败: BTF 没打开"; exit 1; }
           [ "$(grep -c '^CONFIG_KERNEL_DEBUG_INFO_REDUCED=y' .config)" = "0" ] || { echo "失败: DEBUG_INFO_REDUCED 仍开，pahole 会失败"; exit 1; }
+          # ==== 内核 Kconfig 基线：补上 BTF 相关符号，避免 syncconfig 因 (NEW) 符号而失败 ====
+          # 6.18 里 DEBUG_INFO_BTF 在 generic 基线中是 not set，且 DEBUG_INFO_BTF_MODULES 是新符号，
+          # 非交互 make syncconfig 遇到 (NEW) 会直接报错退出（Expanded from Makefile:754 syncconfig）
+          GC=target/linux/generic/config-6.18
+          sed -i 's/^# CONFIG_DEBUG_INFO_BTF is not set/CONFIG_DEBUG_INFO_BTF=y/' "$GC"
+          grep -q '^CONFIG_DEBUG_INFO_BTF=y' "$GC" || echo 'CONFIG_DEBUG_INFO_BTF=y' >> "$GC"
+          sed -i '/^CONFIG_DEBUG_INFO_BTF_MODULES=y$/d; /^# CONFIG_DEBUG_INFO_BTF_MODULES is not set$/d' "$GC"
+          echo '# CONFIG_DEBUG_INFO_BTF_MODULES is not set' >> "$GC"
+          echo "generic 基线 BTF 行: $(grep -cE '^CONFIG_DEBUG_INFO_BTF=y$' "$GC") / MODULES 关闭: $(grep -cE '^# CONFIG_DEBUG_INFO_BTF_MODULES is not set' "$GC")"
 
           echo "==== 校验关键符号 ===="
           grep -E "^CONFIG_TARGET_qualcommax=y|jdcloud_re-ss-01=y|CONFIG_TARGET_ROOTFS_PARTSIZE|CONFIG_PACKAGE_luci-theme-vantage=y|CONFIG_PACKAGE_dnsmasq-full=y|CONFIG_PACKAGE_zram-swap=y|CONFIG_PACKAGE_kmod-usb-storage=y|CONFIG_PACKAGE_kmod-fs-ext4=y" .config || true
