@@ -265,6 +265,11 @@ jobs:
           else
             echo "::error::并行编译失败（不再回落 -j1 重编，避免单线程空跑数小时）"
             mkdir -p logs && cp -f /tmp/compile.log logs/compile-fail.log
+            tail -400 /tmp/compile.log > logs/compile-tail.log
+            echo "==== 内核/镜像相关线索（BTF、超限、pahole）===="
+            grep -nE "too big|pahole|BTF|BTFIDS|vmlinux|No space left|Cannot find|out of memory" /tmp/compile.log | tail -40 || true
+            echo "==== target/linux 失败上下文 ===="
+            grep -n "target/linux" /tmp/compile.log | tail -10 || true
             echo "==== 磁盘余量 ===="
             df -h . / | tail -3
             echo "==== 失败包复现（V=s 抓真因） ===="
