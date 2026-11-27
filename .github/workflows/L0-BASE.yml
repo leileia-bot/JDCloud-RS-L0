@@ -154,6 +154,23 @@ jobs:
             ath10k-firmware-qca9984 ath10k-firmware-qca4019 ath10k-firmware-qca9888 \
             ath10k-firmware-qca6174 ath10k-firmware-qca9377"
 
+          # ==== TRIM：剔除"路由器上用不到"的整族驱动，给 BTF 腾内核槽空间 ====
+          # 只砍与网络/存储/代理链路无关的设备族；网络类一个不动。
+          TRIM_RE='kmod-(dvb|bluetooth|bt|hid|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|hwmon|md|dm|drbd|f2fs|btrfs|xfs|jfs|hfs|reiserfs|cifs|nfs|9p|erofs|gpu|drm|watchdog|pps|ptp|gpio|i2c|spi|rc-|ir-)'
+          trim_uncommon() {
+            echo "==== TRIM：剔除不常用设备族 ===="
+            local before after
+            before=$(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=y' .config || true)
+            # 逐条把整族 =y/=m 压成 not set
+            for k in $(grep -oE '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=[ym]' .config | sed 's/^CONFIG_PACKAGE_//;s/=[ym]//'); do
+              if echo "$k" | grep -qE "^($TRIM_RE)"; then
+                sed -i "s/^CONFIG_PACKAGE_${k//./\\.}=[ym]$/# CONFIG_PACKAGE_${k} is not set/" .config
+              fi
+            done
+            after=$(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=y' .config || true)
+            echo "TRIM: kmod 内建 $before → $after（少 $((before-after)) 个）"
+          }
+
           apply_blacklist() {
             # 变体族整族压制：ath10k 有 -ct / -sdio / -smallbuffers 多个同源包，
             # 它们都提供 ath10k_core.ko，只按名字逐个剔会漏掉变体 → 安装时 file overwrite 冲突
@@ -174,12 +191,14 @@ jobs:
             make defconfig -j$(nproc)
             echo "==== [全量kmod 3/3] 再压一遍，防止 luci-app-* 的 select 把变体拉回 ===="
             apply_blacklist
+            trim_uncommon
             make defconfig -j$(nproc)
             apply_blacklist
+            trim_uncommon
             echo "选中 kmod (y): $(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)"
             echo "模块 kmod (m): $(grep -c '^CONFIG_PACKAGE_kmod.*=m' .config)"
             KY=$(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)
-            [ "$KY" -ge 200 ] || { echo "失败: kmod 内建数只有 $KY，全量未生效"; exit 1; }
+            [ "$KY" -ge 700 ] || { echo "失败: kmod 内建数只有 $KY，全量未生效或 TRIM 过狠"; exit 1; }
             # 硬断言：ath10k 变体族必须一个不剩（否则 install 阶段必然 file overwrite）
             BAD=$(grep -cE '^CONFIG_PACKAGE_kmod-ath10k[A-Za-z0-9._-]*=y' .config || true)
             echo "残留 ath10k 变体(y): $BAD"
