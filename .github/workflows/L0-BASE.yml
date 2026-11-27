@@ -549,6 +549,51 @@ jobs:
           ls -1 ./upload/packages | wc -l
           ls -lh ./upload/*.tar.gz || true
 
+      - name: 落内核符号依赖表（Module.symvers / modules.dep）
+        if: always()
+        run: |
+          cd ./wrt
+          OUT="$PWD/upload/kmoddeps"
+          rm -rf "$OUT"; mkdir -p "$OUT"
+
+          # 1) Module.symvers：每个导出符号 → 导出它的模块（vmlinux=内建）
+          find ./build_dir -maxdepth 5 -name Module.symvers -type f 2>/dev/null | while read -r f; do
+            echo "取到 $f"
+            cp -f "$f" "$OUT/Module.symvers"
+          done
+
+          # 2) modules.* 元数据（只有 =m 模块才有内容）
+          for m in modules.dep modules.builtin modules.builtin.modinfo modules.symbols modules.alias; do
+            p=$(find ./build_dir ./staging_dir -name "$m" -type f 2>/dev/null | head -1)
+            [ -n "$p" ] && cp -f "$p" "$OUT/$m"
+          done
+
+          # 3) 内核 .config（确认 MODULES / MODULE_SIG 等开关）
+          p=$(find ./build_dir -maxdepth 5 -path '*linux-*' -name .config -type f 2>/dev/null | head -1)
+          [ -n "$p" ] && cp -f "$p" "$OUT/kernel-config.txt"
+
+          # 4) 每个模块的 .mod（含 required_symbols 线索），整体打包免name冲突
+          find ./build_dir -maxdepth 6 -name '*.mod' -type f -print0 2>/dev/null \
+            | tar --null -czf "$OUT/mods.tar.gz" -T - 2>/dev/null || true
+
+          echo "==== 落盘结果 ===="
+          ls -lh "$OUT" || true
+          if [ -s "$OUT/Module.symvers" ]; then
+            echo "Module.symvers 符号条数: $(wc -l < "$OUT/Module.symvers")"
+            echo "其中 vmlinux 内建导出: $(awk -F'\t' '$2=="vmlinux"' "$OUT/Module.symvers" | wc -l)"
+            echo "其中 .ko 导出: $(awk -F'\t' '$2!="vmlinux"' "$OUT/Module.symvers" | wc -l)"
+          else
+            echo "警告: 未取到 Module.symvers（多半是没编到内核阶段）"
+          fi
+
+      - name: Upload Kmod Deps
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kmod-deps-${{ github.run_id }}
+          path: ./wrt/upload/kmoddeps/
+          retention-days: 30
+
       - name: Upload Build Log
         if: failure()
         uses: actions/upload-artifact@v4
