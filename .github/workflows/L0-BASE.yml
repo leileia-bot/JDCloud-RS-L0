@@ -181,7 +181,7 @@ jobs:
             kmod-usb-net-rtl8152-vendor \
             kmod-lkdtm kmod-pktgen kmod-bpf-test \
             kmod-crypto-test kmod-mtdtests \
-            v4l2loopback dmx_usb_module \
+            kmod-v4l2loopback \
             kmod-usb-net-asix kmod-usb-net-asix-ax88179 kmod-usb-net-smsc95xx \
             kmod-usb-net-lan78xx kmod-usb-net-kaweth kmod-usb-net-pegasus \
             kmod-usb-hid-mcp2221 \
