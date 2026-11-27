@@ -260,7 +260,9 @@ jobs:
             fi
             exit 0
           fi
-          if make -j$(nproc) 2>&1 | tee /tmp/compile.log; then
+          # 5 小时 40 分护栏：到点由 timeout 杀掉 make，走进失败分支把日志落盘，
+          # 避免被 GitHub 6h 硬顶直接砍掉导致日志全丢
+          if timeout 20400 make -j$(nproc) 2>&1 | tee /tmp/compile.log; then
             echo "编译成功，用时 $(( $(date +%s) - START ))s"
           else
             echo "::error::并行编译失败（不再回落 -j1 重编，避免单线程空跑数小时）"
