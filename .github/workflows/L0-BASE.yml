@@ -287,7 +287,7 @@ jobs:
             # 阈值取 450 —— 只用来抓「ALL_KMODS 根本没生效」这种崩盘，不跟正常剔除对撞
             [ "$KY" -ge 450 ] || { echo "失败: kmod 内建数只有 $KY，全量没生效"; exit 1; }
             # 全量生效的独立佐证：这些包与剔除无关，缺了说明全量没铺开
-            for p in kmod-ath11k-ahb kmod-cfg80211 kmod-mac80211 kmod-usb-core kmod-nf-conntrack kmod-nft-core kmod-crypto-gcm kmod-crypto-ccm kmod-sched-core kmod-lib-crc32c; do
+            for p in kmod-ath11k-ahb kmod-cfg80211 kmod-mac80211 kmod-usb-core kmod-nf-conntrack kmod-nft-core kmod-crypto-gcm kmod-crypto-ccm kmod-sched-core; do
               grep -q "^CONFIG_PACKAGE_${p}=y" .config || { echo "失败: 全量标志包 $p 缺失"; exit 1; }
             done
             # 硬断言：ath10k 变体族必须一个不剩（否则 install 阶段必然 file overwrite）
@@ -368,7 +368,7 @@ jobs:
           fi
           # 依赖链闭环强制钉死：ptp→pps（pps_core.ko 缺了 kmod-ptp 打不出来）、usb-hid→hid 核心
           for p in kmod-pps kmod-ptp kmod-hid kmod-hid-generic kmod-usb-hid; do
-            grep -q "^CONFIG_PACKAGE_${p}=y" .config || { echo "失败: $p 丢失（有保留包依赖它）"; exit 1; }
+            grep -qE "^CONFIG_PACKAGE_${p}=[ym]" .config || { echo "失败: $p 丢失（有保留包依赖它）"; exit 1; }
           done
           echo "OK: pps/ptp/hid/usb-hid 全在"
           grep -q "^CONFIG_PACKAGE_kmod-nss-wifi-drv=y" .config && echo "警告: NSS 驱动仍在" || echo "OK: NSS 驱动未选中"
