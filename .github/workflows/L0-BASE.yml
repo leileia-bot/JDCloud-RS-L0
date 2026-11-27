@@ -155,6 +155,14 @@ jobs:
           #     CRYPTO_LIB_ARC4（内核 lib/arc4.c），WiFi WEP/TKIP 不受影响
           #   crypto-chacha20poly1305：与 crypto-lib-chacha20poly1305（WireGuard 实际使用者）重复
           #   kmod-cryptodev：/dev/crypto 用户态接口，固件内无任何程序使用
+          # 调度族（22 个，必须成组）：kmod-sched 正向依赖 ets/gred/act-pedit，netem 又依赖
+          #   kmod-sched → 这 5 个是一条链，只砍一半会留下悬空依赖。保留 sched-core（HTB/TBF/
+          #   ingress/cls_act 底座）、cake（SQM 主算法）、pie/fq-pie/red、flower。
+          #   !! fq_codel 不在这些包里，target 基线 CONFIG_DEFAULT_FQ_CODEL=y 自带，砍了不掉队列算法
+          # 文件系统（4 个）：udf/isofs（挂光盘/ISO 镜像）、minix（老 Minix）、nilfs2（停更日志FS）
+          #   ext4/vfat/msdos/exfat/f2fs/btrfs/cifs/ksmbd/nfs/squashfs 全部保留
+          # nls 编码（14 个）：中欧/西里尔/希腊/希伯来/冰岛/日文SJIS/繁体BIG5 代码页
+          #   保留 base/utf8/cp437/iso8859-1/iso8859-15/ucs2-utils/cp936（GBK）
           BLACKLIST="kmod-nss-wifi-drv kmod-fs-afs kmod-fs-ntfs3 r8152 \
             kmod-ath10k kmod-ath10k-ct \
             wpad-basic-mbedtls wpad-basic-wolfssl wpad-wolfssl \
@@ -177,7 +185,18 @@ jobs:
             kmod-crypto-hw-padlock kmod-crypto-hw-hifn-795x kmod-crypto-hw-atmel \
             kmod-crypto-md4 kmod-crypto-rmd160 kmod-crypto-fcrypt \
             kmod-crypto-pcbc kmod-crypto-michael-mic kmod-crypto-arc4 \
-            kmod-crypto-chacha20poly1305 kmod-cryptodev"
+            kmod-crypto-chacha20poly1305 kmod-cryptodev \
+            kmod-sched kmod-netem kmod-sched-ets kmod-sched-gred kmod-sched-act-pedit \
+            kmod-sched-cbs kmod-sched-etf kmod-sched-taprio kmod-sched-mqprio \
+            kmod-sched-mqprio-common kmod-sched-dualpi2 kmod-sched-drr kmod-sched-prio \
+            kmod-sched-skbprio kmod-sched-act-gate kmod-sched-act-police \
+            kmod-sched-act-sample kmod-sched-act-vlan kmod-sched-bpf \
+            kmod-sched-ctinfo kmod-sched-connmark kmod-sched-ipset \
+            kmod-fs-udf kmod-fs-isofs kmod-fs-minix kmod-fs-nilfs2 \
+            kmod-nls-cp1250 kmod-nls-cp1251 kmod-nls-cp775 kmod-nls-cp850 \
+            kmod-nls-cp852 kmod-nls-cp862 kmod-nls-cp864 kmod-nls-cp866 \
+            kmod-nls-cp932 kmod-nls-cp950 kmod-nls-iso8859-2 kmod-nls-iso8859-6 \
+            kmod-nls-iso8859-8 kmod-nls-iso8859-13 kmod-nls-koi8r"
 
           # ==== TRIM：剔除"路由器上用不到"的整族驱动，给 BTF 腾内核槽空间 ====
           # 只砍与网络/存储/代理链路无关的设备族；网络类一个不动。
@@ -253,12 +272,19 @@ jobs:
             for p in kmod-usb-net-rtl8152 kmod-usb-net-rtl8150; do
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config && echo "  !! 误伤 ${p}" || echo "  OK 未误伤 ${p}"
             done
+            # 调度族必须成组剔除，且核心必须存活
+            BADS=$(grep -cE '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|mqprio|mqprio-common|dualpi2|drr|prio|skbprio|ets|gred|act-gate|act-pedit|act-police|act-sample|act-vlan|bpf|ctinfo|connmark|ipset))?=[ym]' .config || true)
+            echo "残留调度族(y/m): $BADS"
+            [ "$BADS" = "0" ] || { grep -E '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|mqprio|mqprio-common|dualpi2|drr|prio|skbprio|ets|gred|act-gate|act-pedit|act-police|act-sample|act-vlan|bpf|ctinfo|connmark|ipset))?=[ym]' .config; echo "失败: 调度族未清干净"; exit 1; }
+            grep -q '^CONFIG_PACKAGE_kmod-netem=y' .config && { echo "失败: kmod-netem 仍在（会缺 kmod-sched 依赖）"; exit 1; } || echo "  OK netem 已剔除"
             echo "排除项校验（必须全部 is not set）:"
             for p in kmod-ath10k kmod-ath10k-ct r8152 firewall wpad-wolfssl kmod-nss-wifi-drv; do
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config && echo "  OK $p" || echo "  !! $p 仍被选中"
             done
             # 关键依赖不能被误剔
-            for p in kmod-mac80211 kmod-ath11k kmod-ath11k-ahb kmod-usb-net kmod-nft-core \
+            for p in kmod-sched-core kmod-sched-cake kmod-nls-utf8 kmod-nls-cp437 \
+                     kmod-nls-base kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
+                     kmod-mac80211 kmod-ath11k kmod-ath11k-ahb kmod-usb-net kmod-nft-core \
                      nftables-json nftables libnftnl; do
               grep -q "^CONFIG_PACKAGE_${p}=y" .config && echo "  依赖OK $p" || echo "  !! 依赖丢失 $p"
             done
