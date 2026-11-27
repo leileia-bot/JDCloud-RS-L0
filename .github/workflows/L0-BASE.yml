@@ -245,6 +245,14 @@ jobs:
           else
             echo "::error::并行编译失败（不再回落 -j1 重编，避免单线程空跑数小时）"
             mkdir -p logs && cp -f /tmp/compile.log logs/compile-fail.log
+            echo "==== 磁盘余量 ===="
+            df -h . / | tail -3
+            echo "==== 失败包复现（V=s 抓真因） ===="
+            FAILPKG=$(grep -oE "ERROR: (feeds|package)/[^ ]+ failed to build" /tmp/compile.log | head -1 | awk '{print $2}')
+            echo "失败包：$FAILPKG"
+            if [ -n "$FAILPKG" ]; then
+              make "$FAILPKG/compile" V=s 2>&1 | tee logs/pkg-fail.log | tail -150 || true
+            fi
             echo "==== 错误上下文 ===="
             grep -nE "Error [0-9]+|error:|ERROR:|No rule to make|duplicate package|already defined" /tmp/compile.log | tail -40 || true
             echo "==== 失败包线索 ===="
