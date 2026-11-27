@@ -283,7 +283,13 @@ jobs:
             echo "选中 kmod (y): $(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)"
             echo "模块 kmod (m): $(grep -c '^CONFIG_PACKAGE_kmod.*=m' .config)"
             KY=$(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)
-            [ "$KY" -ge 700 ] || { echo "失败: kmod 内建数只有 $KY，全量未生效或 TRIM 过狠"; exit 1; }
+            # 门槛说明：基线全量 1133 个，本轮按硬件精确剔除约 575 个（cut_extra 235 + 各整族），合理余量 554
+            # 阈值取 450 —— 只用来抓「ALL_KMODS 根本没生效」这种崩盘，不跟正常剔除对撞
+            [ "$KY" -ge 450 ] || { echo "失败: kmod 内建数只有 $KY，全量没生效"; exit 1; }
+            # 全量生效的独立佐证：这些包与剔除无关，缺了说明全量没铺开
+            for p in kmod-ath11k-ahb kmod-cfg80211 kmod-mac80211 kmod-usb-core kmod-nf-conntrack kmod-nft-core kmod-crypto-gcm kmod-crypto-ccm kmod-sched-core kmod-lib-crc32c; do
+              grep -q "^CONFIG_PACKAGE_${p}=y" .config || { echo "失败: 全量标志包 $p 缺失"; exit 1; }
+            done
             # 硬断言：ath10k 变体族必须一个不剩（否则 install 阶段必然 file overwrite）
             BAD=$(grep -cE '^CONFIG_PACKAGE_kmod-ath10k[A-Za-z0-9._-]*=y' .config || true)
             echo "残留 ath10k 变体(y): $BAD"
