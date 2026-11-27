@@ -182,6 +182,7 @@ jobs:
             kmod-lkdtm kmod-pktgen kmod-bpf-test \
             kmod-crypto-test kmod-mtdtests \
             kmod-v4l2loopback \
+            kmod-aic8800 \
             kmod-usb-net-asix kmod-usb-net-asix-ax88179 kmod-usb-net-smsc95xx \
             kmod-usb-net-lan78xx kmod-usb-net-kaweth kmod-usb-net-pegasus \
             kmod-usb-hid-mcp2221 \
