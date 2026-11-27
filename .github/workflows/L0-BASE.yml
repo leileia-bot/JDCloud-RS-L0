@@ -25,6 +25,11 @@ on:
         type: boolean
         default: false
         required: false
+      ONLY_PKG:
+        description: '调试：只编指定包（如 package/network/services/dnsmasq），留空=完整编译'
+        type: string
+        default: ''
+        required: false
 
 env:
   SOURCE_REPO: https://github.com/VIKINGYFY/immortalwrt.git
@@ -222,6 +227,19 @@ jobs:
           cd ./wrt
           set -o pipefail
           START=$(date +%s)
+          ONLY="${{ inputs.ONLY_PKG }}"
+          if [ -n "$ONLY" ]; then
+            echo "调试模式：只编 $ONLY"
+            if make "$ONLY/compile" V=s 2>&1 | tee /tmp/compile.log; then
+              echo "单包编译成功"
+            else
+              echo "::error::单包编译失败"
+              mkdir -p logs && cp -f /tmp/compile.log logs/compile-fail.log
+              tail -80 /tmp/compile.log
+              exit 1
+            fi
+            exit 0
+          fi
           if make -j$(nproc) 2>&1 | tee /tmp/compile.log; then
             echo "编译成功，用时 $(( $(date +%s) - START ))s"
           else
