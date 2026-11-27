@@ -182,7 +182,6 @@ jobs:
             kmod-lkdtm kmod-pktgen kmod-bpf-test \
             kmod-crypto-test kmod-mtdtests \
             kmod-v4l2loopback \
-            kmod-aic8800 \
             kmod-usb-net-asix kmod-usb-net-asix-ax88179 kmod-usb-net-smsc95xx \
             kmod-usb-net-lan78xx kmod-usb-net-kaweth kmod-usb-net-pegasus \
             kmod-usb-hid-mcp2221 \
@@ -253,6 +252,10 @@ jobs:
             # ebtables 二层老防火墙（MAC/VLAN 帧过滤），已被 nftables bridge 取代；
             # firewall4 / nft-tproxy / nft-queue 均不依赖它，整族剔除 kmod-ebtables*
             sed -i -E 's/^CONFIG_PACKAGE_(kmod-ebtables[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # AIC(aic8800) USB/SDIO/PCIe WiFi + BT 整族：本机无 AIC 芯片；BT 子模块引用已被
+            #   TRIM 关闭的 hci_free_dev/hci_alloc_dev_priv/hci_register_dev 等，modpost undefined。
+            #   包名拆 kmod-aic8800-{btusb,sdio,pcie,usb} + aic8800-{usb,sdio,pcie}-firmware，裸名 kmod-aic8800 不命中，必须整族正则
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-aic8800[A-Za-z0-9._-]*|aic8800-[A-Za-z0-9._-]*-firmware)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             # 非本机 PCIe 网卡整族（没有 PCIe 槽就必须全族一起走，不能只走一半）
             sed -i -E 's/^CONFIG_PACKAGE_('"${NIC_RE}"')[A-Za-z0-9._-]*=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             # IIO 工业/环境传感器整族（板子无对外 I2C/SPI 传感器接口，温度走 hwmon/TSENS）
