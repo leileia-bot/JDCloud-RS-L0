@@ -156,7 +156,10 @@ jobs:
 
           # ==== TRIM：剔除"路由器上用不到"的整族驱动，给 BTF 腾内核槽空间 ====
           # 只砍与网络/存储/代理链路无关的设备族；网络类一个不动。
-          TRIM_RE='kmod-(dvb|bluetooth|bt|hid|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|hwmon|md|dm|drbd|f2fs|btrfs|xfs|jfs|hfs|reiserfs|cifs|nfs|9p|erofs|gpu|drm|watchdog|pps|ptp|gpio|i2c|spi|rc-|ir-)'
+          # 明确保留（不要往 TRIM 里加）：dm（Docker device-mapper）、md（软 RAID）、
+          #   cifs（挂 SMB）、nfs（挂 NFS）、btrfs/f2fs（群晖/手机盘直插识别）、
+          #   watchdog（死机自重启）、hwmon（IPQ6000 温度读取）
+          TRIM_RE='kmod-(dvb|bluetooth|bt|hid|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|drbd|xfs|jfs|hfs|reiserfs|9p|erofs|gpu|drm|pps|ptp|gpio|i2c|spi|rc-|ir-)'
           trim_uncommon() {
             echo "==== TRIM：剔除不常用设备族 ===="
             local before after
