@@ -194,6 +194,8 @@ jobs:
             sed -i -E 's/^CONFIG_PACKAGE_(kmod-ath10k[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             # 非本机 PCIe 网卡整族（没有 PCIe 槽就必须全族一起走，不能只走一半）
             sed -i -E 's/^CONFIG_PACKAGE_('"${NIC_RE}"')[A-Za-z0-9._-]*=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # IIO 工业/环境传感器整族（板子无对外 I2C/SPI 传感器接口，温度走 hwmon/TSENS）
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-iio[A-Za-z0-9._-]*|kmod-industrialio[A-Za-z0-9._-]*|kmod-input-adc-keys|kmod-usb-hid-mcp2221)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             for p in $BLACKLIST; do
               sed -i "s/^CONFIG_PACKAGE_${p}=[my]\$/# CONFIG_PACKAGE_${p} is not set/" .config
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config || \
