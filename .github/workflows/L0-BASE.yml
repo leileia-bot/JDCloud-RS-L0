@@ -137,12 +137,15 @@ jobs:
           #   kmod-ath10k / -ct   设备是 ath11k，ath10k 两套整族剔除（含固件层不选）
           #   wpad 变体族         只留 wpad-openssl，避免加密库全家桶互斥
           #   selinux 变体族      不用 SELinux，整族剔除，防止"装了变体没装框架"
-          #   firewall(fw3)       走 fw4 线；nftables-json / apk-mbedtls 同族剔除
+          #   firewall(fw3)       走 fw4 线；apk-mbedtls 让位 apk-openssl
+          #   !! nftables-json 绝对不能剔：它提供 nft 二进制 + libnftables.so.1，
+          #      firewall4 和 dnsmasq_full_nftset 都要它，剔掉会让 dnsmasq 打包报
+          #      "missing dependencies: libnftables.so.1"（本轮 45925641337 的真因）
           #   rtl826x-firmware    该树模板 bug（自我冲突），永远装不上
           BLACKLIST="kmod-nss-wifi-drv kmod-fs-afs kmod-fs-ntfs3 r8152 \
             kmod-ath10k kmod-ath10k-ct \
             wpad-basic-mbedtls wpad-basic-wolfssl wpad-wolfssl \
-            firewall nftables-json apk-mbedtls procd-selinux busybox-selinux \
+            firewall apk-mbedtls procd-selinux busybox-selinux \
             uencrypt-openssl uencrypt-wolfssl \
             f2fs-tools-selinux mkf2fs-selinux f2fsck-selinux libf2fs-selinux \
             libwolfsslcpu-crypto rtl826x-firmware \
@@ -177,9 +180,14 @@ jobs:
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config && echo "  OK $p" || echo "  !! $p 仍被选中"
             done
             # 关键依赖不能被误剔
-            for p in kmod-mac80211 kmod-ath11k kmod-ath11k-ahb kmod-usb-net kmod-nft-core; do
+            for p in kmod-mac80211 kmod-ath11k kmod-ath11k-ahb kmod-usb-net kmod-nft-core \
+                     nftables-json nftables libnftnl; do
               grep -q "^CONFIG_PACKAGE_${p}=y" .config && echo "  依赖OK $p" || echo "  !! 依赖丢失 $p"
             done
+            # 硬断言：nftables-json 提供 nft + libnftables.so.1，
+            # firewall4 与 dnsmasq_full_nftset 都靠它，缺了会在打包阶段死
+            grep -q "^CONFIG_PACKAGE_nftables-json=y" .config || {
+              echo "失败: nftables-json 未选中 → dnsmasq-full 会缺 libnftables.so.1"; exit 1; }
           fi
           echo "==== 校验关键符号 ===="
           grep -E "^CONFIG_TARGET_qualcommax=y|jdcloud_re-ss-01=y|CONFIG_TARGET_ROOTFS_PARTSIZE|CONFIG_PACKAGE_luci-theme-vantage=y|CONFIG_PACKAGE_dnsmasq-full=y|CONFIG_PACKAGE_zram-swap=y|CONFIG_PACKAGE_kmod-usb-storage=y|CONFIG_PACKAGE_kmod-fs-ext4=y" .config || true
