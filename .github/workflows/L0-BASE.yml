@@ -364,45 +364,50 @@ jobs:
             exit 1
           fi
 
-      - name: 内核体积实测（只测不拦）
+      - name: 内核体积实测（12M 校验；超了自动抛弃 BTF 同轮重编）
         run: |
           cd ./wrt
           BDL=$(find build_dir -maxdepth 1 -type d -name 'linux-qualcommax_ipq60xx' | head -1)
-          echo "build_dir: $BDL"; [ -n "$BDL" ] || { echo "注意: 内核 build_dir 不存在（内核没编出来）"; exit 0; }
-          K=$BDL/arch/arm64/boot/Image.gz
-          [ -f "$K" ] || K=$BDL/arch/arm64/boot/Image
-          if [ -f "$K" ]; then
-            KSZ=$(stat -c%s "$K")
-            echo "==== 实测：内核镜像 $((KSZ/1024)) KiB ($KSZ bytes) 文件=$(basename $K)"
+          [ -n "$BDL" ] || { echo "失败: 内核 build_dir 不存在"; exit 1; }
+          measure() {
+            K="$BDL/arch/arm64/boot/Image.gz"; [ -f "$K" ] || K="$BDL/arch/arm64/boot/Image"
+            [ -f "$K" ] || { echo 0; return; }
+            KSZ=$(stat -c%s "$K"); DSZ=0
+            for d in "$BDL"/arch/arm64/boot/dts/qcom/*jdcloud*.dtb; do [ -f "$d" ] && { DSZ=$(stat -c%s "$d"); break; }; done
+            echo $(( (KSZ + DSZ + 1023) / 1024 ))
+          }
+          TOT=$(measure)
+          echo "实测内核合计: ${TOT} KiB / 12M 槽 = 12288 KiB"
+          if [ "${TOT}" -le 0 ]; then echo "失败: 找不到内核镜像"; exit 1; fi
+          if [ "${TOT}" -gt 12288 ]; then
+            echo "==== 超 12M（${TOT} > 12288）→ 放弃 BTF，同轮重编 ===="
+            sed -i 's/^CONFIG_KERNEL_DEBUG_INFO_BTF=y/# CONFIG_KERNEL_DEBUG_INFO_BTF is not set/' .config
+            grep -q '^# CONFIG_KERNEL_DEBUG_INFO_BTF is not set' .config || echo '# CONFIG_KERNEL_DEBUG_INFO_BTF is not set' >> .config
+            GC=target/linux/generic/config-6.18
+            sed -i 's/^CONFIG_DEBUG_INFO_BTF=y/# CONFIG_DEBUG_INFO_BTF is not set/' "$GC"
+            grep -q '^# CONFIG_DEBUG_INFO_BTF is not set' "$GC" || echo '# CONFIG_DEBUG_INFO_BTF is not set' >> "$GC"
+            echo "关闭 BTF 完成，清理内核重编（包已缓存，只重编内核+镜像）"
+            make target/linux/clean
+            timeout 20400 make -j"$(nproc)" world
+            TOT=$(measure)
+            echo "无 BTF 实测: ${TOT} KiB"
+            [ "${TOT}" -le 12288 ] || { echo "失败: 放弃 BTF 后仍超 12M（${TOT} KiB）"; exit 1; }
+            echo "BTF_MODE=no-btf" >> "$GITHUB_ENV"
+            echo "- **结论**: 不带 BTF，${TOT} KiB / 12288 KiB 通过（余 $((12288-TOT)) KiB）" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "注意: 找不到 Image/Image.gz"
+            echo "BTF_MODE=btf" >> "$GITHUB_ENV"
+            echo "- **结论**: 带 BTF，${TOT} KiB / 12288 KiB 通过（余 $((12288-TOT)) KiB）" >> "$GITHUB_STEP_SUMMARY"
           fi
-          DSZ=0
-          for d in $BDL/arch/arm64/boot/dts/qcom/*jdcloud*.dtb; do
-            [ -f "$d" ] && { DSZ=$(stat -c%s "$d"); echo "实测: dtb $(basename $d) $((DSZ/1024)) KiB"; break; }
-          done
-          if [ -f "$K" ]; then
-            TOT=$(( (KSZ+DSZ)/1024 ))
-            echo "槽对比: 实测合计 ${TOT} KiB / 6M槽 6144 KiB / 12M槽 12288 KiB"
-            if [ "$TOT" -le 6144 ]; then echo "判定: 装得进 6M 原生槽"; elif [ "$TOT" -le 12288 ]; then echo "判定: 6M 装不下，12M 装得下（余 $((12288-TOT)) KiB）"; else echo "判定: 超 12M 上限 $((TOT-12288)) KiB，需要再精简"; fi
-          fi
-
           VML=$(find "$BDL" -maxdepth 1 -name 'vmlinux' | head -1)
           if [ -f "$VML" ]; then
             echo "vmlinux: $(stat -c%s "$VML" | awk '{printf "%.1f MiB", $1/1048576}')"
-            readelf -SW "$VML" | grep -E '\.BTF' | head -2 || echo "无 .BTF 段（BTF 未进内核）"
+            readelf -SW "$VML" | grep -E '\.BTF' | head -2 || echo "无 .BTF 段"
           fi
-
           KC=$(find "$BDL" -maxdepth 2 -name '.config' | head -1)
           if [ -f "$KC" ]; then
-            echo "内核 .config: $KC"
-            echo "内核特性 =y : $(grep -c '^CONFIG_[A-Za-z0-9_]*=y' "$KC")"
-            echo "内核特性 =m : $(grep -c '^CONFIG_[A-Za-z0-9_]*=m' "$KC")"
-            echo "内核条目总数: $(grep -c '^CONFIG_' "$KC")"
+            echo "内核特性 =y: $(grep -c '^CONFIG_[A-Za-z0-9_]*=y' "$KC")  =m: $(grep -c '^CONFIG_[A-Za-z0-9_]*=m' "$KC")  条目: $(grep -c '^CONFIG_' "$KC")"
           fi
-          echo "kmod 内建 =y : $(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=y' .config)"
-          echo "kmod 独立 =m : $(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=m' .config)"
-          exit 0
+          echo "kmod 内建: $(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=y' .config)  独立: $(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=m' .config)"
 
       - name: 断言无线固件已落地（${{ inputs.WIFI_FW }}）
         if: ${{ !inputs.TEST }}
