@@ -273,18 +273,31 @@ jobs:
             echo "==== 磁盘余量 ===="
             df -h . / | tail -3
             echo "==== 失败包复现（V=s 抓真因） ===="
-            FAILPKG=$(grep -oE "ERROR: (feeds|package)/[^ ]+ failed to build" /tmp/compile.log | head -1 | awk '{print $2}')
+            FAILPKG=$(grep -oE "ERROR: (feeds|package|target)/[^ ]+ failed to build" /tmp/compile.log | head -1 | awk '{print $2}' || true)
             echo "失败包：$FAILPKG"
-            if [ -n "$FAILPKG" ]; then
-              make "$FAILPKG/compile" V=s 2>&1 | tee logs/pkg-fail.log | tail -150 || true
-            else
-              echo "==== 非包失败（target/linux 或 image 阶段），原地 V=s 复现 ===="
-              make target/linux/compile V=s 2>&1 | tee logs/target-fail.log | tail -200 || true
-              echo "==== 内核构建线索 ===="
-              grep -nE "too big|pahole|BTF|BTFIDS|vmlinux|Error [0-9]" logs/target-fail.log | tail -40 || true
-              echo "==== 内核日志尾部 ===="
-              tail -120 logs/target-fail.log || true
-            fi
+            case "$FAILPKG" in
+              *target/linux*)
+                echo "==== 内核（target/linux）失败：原地 V=s 复现 ===="
+                make target/linux/compile V=s 2>&1 | tee logs/target-fail.log | tail -300 || true
+                echo "==== 内核错误线索 ===="
+                grep -nE "too big|Image too big|pahole|BTF|BTFIDS|vmlinux|Error [0-9]|error:|Error:" logs/target-fail.log | tail -60 || true
+                ;;
+              "")
+                echo "==== 无包级错误线索：先怀疑 package/install（打包/库依赖）===="
+                make package/install V=s 2>&1 | tee logs/install-fail.log | tail -200 || true
+                echo "==== install 阶段线索 ===="
+                grep -nE "missing dependencies|Collected error|conflict|Cannot find|No such file|not found|Error [0-9]" logs/install-fail.log | tail -60 || true
+                if ! grep -qE "missing dependencies|Collected error|conflict|Error [0-9]" logs/install-fail.log; then
+                  echo "==== install 阶段未复现，回落 target/linux ===="
+                  make target/linux/compile V=s 2>&1 | tee logs/target-fail.log | tail -200 || true
+                  grep -nE "too big|pahole|BTF|Error [0-9]" logs/target-fail.log | tail -40 || true
+                fi
+                ;;
+              *)
+                make "$FAILPKG/compile" V=s 2>&1 | tee logs/pkg-fail.log | tail -200 || true
+                grep -nE "missing dependencies|Error [0-9]|error:" logs/pkg-fail.log | tail -40 || true
+                ;;
+            esac
             echo "==== 错误上下文 ===="
             grep -nE "Error [0-9]+|error:|ERROR:|No rule to make|duplicate package|already defined" /tmp/compile.log | tail -40 || true
             echo "==== 失败包线索 ===="
