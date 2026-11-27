@@ -145,6 +145,9 @@ jobs:
           #      firewall4 和 dnsmasq_full_nftset 都要它，剔掉会让 dnsmasq 打包报
           #      "missing dependencies: libnftables.so.1"（本轮 45925641337 的真因）
           #   rtl826x-firmware    该树模板 bug（自我冲突），永远装不上
+          #   ipt-chaos/delude/tarpit（xtables-addons 反扫描三件套，chaos 依赖 delude+tarpit，
+          #     必须整组一起剔）、ipt-lua/psd/lscan/asn：无任何向外反向依赖，用户态
+          #     iptables-mod-* 全部未选中，iptables 二进制本身也没进固件 → 纯死重
           BLACKLIST="kmod-nss-wifi-drv kmod-fs-afs kmod-fs-ntfs3 r8152 \
             kmod-ath10k kmod-ath10k-ct \
             wpad-basic-mbedtls wpad-basic-wolfssl wpad-wolfssl \
@@ -161,7 +164,9 @@ jobs:
             v4l2loopback dmx_usb_module \
             kmod-usb-net-asix kmod-usb-net-asix-ax88179 kmod-usb-net-smsc95xx \
             kmod-usb-net-lan78xx kmod-usb-net-kaweth kmod-usb-net-pegasus \
-            kmod-usb-hid-mcp2221"
+            kmod-usb-hid-mcp2221 \
+            kmod-ipt-chaos kmod-ipt-delude kmod-ipt-tarpit \
+            kmod-ipt-lua kmod-ipt-psd kmod-ipt-lscan kmod-ipt-asn"
 
           # ==== TRIM：剔除"路由器上用不到"的整族驱动，给 BTF 腾内核槽空间 ====
           # 只砍与网络/存储/代理链路无关的设备族；网络类一个不动。
