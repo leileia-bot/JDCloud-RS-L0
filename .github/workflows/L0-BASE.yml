@@ -213,6 +213,12 @@ jobs:
             sed -i -E 's/^CONFIG_PACKAGE_('"${NIC_RE}"')[A-Za-z0-9._-]*=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             # IIO 工业/环境传感器整族（板子无对外 I2C/SPI 传感器接口，温度走 hwmon/TSENS）
             sed -i -E 's/^CONFIG_PACKAGE_(kmod-iio[A-Za-z0-9._-]*|kmod-industrialio[A-Za-z0-9._-]*|kmod-input-adc-keys|kmod-usb-hid-mcp2221)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # 外置 Realtek WiFi 网卡整族：rtw88/rtw89/老 rtl8xxx 共 51 个驱动 + 30 个固件
+            # 正则边界要点：锚定 ^CONFIG_PACKAGE_kmod-(rtw|rtl)[0-9]，且 [0-9] 后面必须跟
+            #   [A-Za-z0-9._-]*（不然 rtw88 这种"双数字结尾"会漏，之前干跑就踩过）
+            #   这样 kmod-usb-net-rtl8150/rtl8152（USB 有线网卡）、kmod-dsa-rtl8365mb、
+            #   kmod-switch-rtl8306/8366/8367（交换机芯片）都不会被误伤
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-(rtw|rtl)[0-9][A-Za-z0-9._-]*|rtl[0-9][A-Za-z0-9._-]*-firmware)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             for p in $BLACKLIST; do
               sed -i "s/^CONFIG_PACKAGE_${p}=[my]\$/# CONFIG_PACKAGE_${p} is not set/" .config
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config || \
@@ -240,6 +246,13 @@ jobs:
             BAD=$(grep -cE '^CONFIG_PACKAGE_kmod-ath10k[A-Za-z0-9._-]*=y' .config || true)
             echo "残留 ath10k 变体(y): $BAD"
             [ "$BAD" = "0" ] || { grep -E '^CONFIG_PACKAGE_kmod-ath10k[A-Za-z0-9._-]*=y' .config; echo "失败: ath10k 变体族仍有选中，install 会 file overwrite"; exit 1; }
+            # 硬断言：外置 Realtek WiFi 族（驱动 + 固件）必须一个不剩
+            BADR=$(grep -cE '^CONFIG_PACKAGE_(kmod-(rtw|rtl)[0-9][A-Za-z0-9._-]*|rtl[0-9][A-Za-z0-9._-]*-firmware)=[ym]' .config || true)
+            echo "残留 Realtek 外置网卡族(y/m): $BADR"
+            [ "$BADR" = "0" ] || { grep -E '^CONFIG_PACKAGE_(kmod-(rtw|rtl)[0-9][A-Za-z0-9._-]*|rtl[0-9][A-Za-z0-9._-]*-firmware)=[ym]' .config; echo "失败: Realtek 外置网卡族仍有选中"; exit 1; }
+            for p in kmod-usb-net-rtl8152 kmod-usb-net-rtl8150; do
+              grep -q "^# CONFIG_PACKAGE_${p} is not set" .config && echo "  !! 误伤 ${p}" || echo "  OK 未误伤 ${p}"
+            done
             echo "排除项校验（必须全部 is not set）:"
             for p in kmod-ath10k kmod-ath10k-ct r8152 firewall wpad-wolfssl kmod-nss-wifi-drv; do
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config && echo "  OK $p" || echo "  !! $p 仍被选中"
