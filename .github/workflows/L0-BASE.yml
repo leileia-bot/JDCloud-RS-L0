@@ -150,14 +150,19 @@ jobs:
           #     iptables-mod-* 全部未选中，iptables 二进制本身也没进固件 → 纯死重
           #   crypto-hw-padlock/hifn-795x/atmel：x86 VIA CPU / PCIe 加密卡 / I2C 加密芯片，
           #     亚瑟三样硬件都没有，反向依赖 0
-          #   crypto-md4/rmd160/fcrypt/pcbc/michael-mic/arc4：冷门或已废弃算法，反向依赖 0；
+          #   crypto-md4/rmd160/fcrypt/pcbc/arc4：冷门或已废弃算法，反向依赖 0；
           #     !! 注意 arc4 砍的是 CONFIG_CRYPTO_ARC4（AF_ALG 封装），mac80211 select 的是
           #     CRYPTO_LIB_ARC4（内核 lib/arc4.c），WiFi WEP/TKIP 不受影响
-          #   crypto-chacha20poly1305：与 crypto-lib-chacha20poly1305（WireGuard 实际使用者）重复
+          #     !! michael-mic 已拉回（run 46069286386 实证 ath11k 反向依赖，install 缺包）
+          #   crypto-chacha20poly1305 已拉回：kmod-ovpn-backports 反向依赖（run 46069286386 实证）；
+          #     与 lib-chacha20poly1305 不重复——前者是 AEAD algif 封装，后者是内核 lib 原语
           #   kmod-cryptodev：/dev/crypto 用户态接口，固件内无任何程序使用
-          # 调度族（22 个，必须成组）：kmod-sched 正向依赖 ets/gred/act-pedit，netem 又依赖
-          #   kmod-sched → 这 5 个是一条链，只砍一半会留下悬空依赖。保留 sched-core（HTB/TBF/
-          #   ingress/cls_act 底座）、cake（SQM 主算法）、pie/fq-pie/red、flower。
+          # 调度族：保留 sched-core（HTB/TBF/ingress/cls_act 底座）、cake、pie/fq-pie/red、flower、sched-bpf。
+          #   !! run 46069286386 实证反向依赖，拉回被保留包需要的叶子：
+          #      qca-ppe-qos（平台硬件 PPE QoS，luci 配套保留）→ act-pedit/act-police/ets/mqprio(+common)/prio；
+          #      kmod-openvswitch（全量 kmod 铺开）→ act-sample；kmod-ovpn-backports → chacha20poly1305。
+          #   !! 其余无场景调度项仍成组剔除：kmod-sched/netem/gred/cbs/etf/taprio/dualpi2/drr/
+          #      skbprio/act-gate/act-vlan/ctinfo/connmark/ipset。
           #   !! fq_codel 不在这些包里，target 基线 CONFIG_DEFAULT_FQ_CODEL=y 自带，砍了不掉队列算法
           #   !! 改用 SQM（cake + ifb + nftables，纯用户态），不再装 trafficshaper，
           #     因此 kmod-sched-connmark 回砍（SQM 不需要它）
@@ -190,13 +195,13 @@ jobs:
             ebtables-legacy ebtables-legacy-utils ebtables-nft \
             kmod-crypto-hw-padlock kmod-crypto-hw-hifn-795x kmod-crypto-hw-atmel \
             kmod-crypto-md4 kmod-crypto-rmd160 kmod-crypto-fcrypt \
-            kmod-crypto-pcbc kmod-crypto-michael-mic kmod-crypto-arc4 \
-            kmod-crypto-chacha20poly1305 kmod-cryptodev \
-            kmod-sched kmod-netem kmod-sched-ets kmod-sched-gred kmod-sched-act-pedit \
-            kmod-sched-cbs kmod-sched-etf kmod-sched-taprio kmod-sched-mqprio \
-            kmod-sched-mqprio-common kmod-sched-dualpi2 kmod-sched-drr kmod-sched-prio \
-            kmod-sched-skbprio kmod-sched-act-gate kmod-sched-act-police \
-            kmod-sched-act-sample kmod-sched-act-vlan \
+            kmod-crypto-pcbc kmod-crypto-arc4 \
+            kmod-cryptodev \
+            kmod-sched kmod-netem kmod-sched-gred \
+            kmod-sched-cbs kmod-sched-etf kmod-sched-taprio \
+            kmod-sched-dualpi2 kmod-sched-drr \
+            kmod-sched-skbprio kmod-sched-act-gate \
+            kmod-sched-act-vlan \
             kmod-sched-ctinfo kmod-sched-connmark kmod-sched-ipset \
             kmod-fs-udf kmod-fs-isofs kmod-fs-minix kmod-fs-nilfs2 \
             kmod-nls-cp1250 kmod-nls-cp1251 kmod-nls-cp775 kmod-nls-cp850 \
@@ -320,9 +325,9 @@ jobs:
             [ "$BADE" = "0" ] || { echo "失败: cut_extra 名单未清干净"; exit 1; }
             grep -q '^CONFIG_PACKAGE_kmod-nf-ipvs=y' .config && echo "  OK nf-ipvs 已保留（keepalived/dockerd 用）" || { echo "失败: kmod-nf-ipvs 丢失"; exit 1; }
             # 调度族必须成组剔除，且核心必须存活
-            BADS=$(grep -cE '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|mqprio|mqprio-common|dualpi2|drr|prio|skbprio|ets|gred|act-gate|act-pedit|act-police|act-sample|act-vlan|ctinfo|connmark|ipset))?=[ym]' .config || true)
+            BADS=$(grep -cE '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|dualpi2|drr|skbprio|gred|act-gate|act-vlan|ctinfo|connmark|ipset))?=[ym]' .config || true)
             echo "残留调度族(y/m): $BADS"
-            [ "$BADS" = "0" ] || { grep -E '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|mqprio|mqprio-common|dualpi2|drr|prio|skbprio|ets|gred|act-gate|act-pedit|act-police|act-sample|act-vlan|ctinfo|connmark|ipset))?=[ym]' .config; echo "失败: 调度族未清干净"; exit 1; }
+            [ "$BADS" = "0" ] || { grep -E '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|dualpi2|drr|skbprio|gred|act-gate|act-vlan|ctinfo|connmark|ipset))?=[ym]' .config; echo "失败: 调度族未清干净"; exit 1; }
             grep -q '^CONFIG_PACKAGE_kmod-sched-connmark=y' .config && { echo "失败: kmod-sched-connmark 仍在内建（已改 SQM，应剔除）"; exit 1; } || echo "  OK sched-connmark 已剔除"
             grep -q '^CONFIG_PACKAGE_kmod-sched-bpf=y' .config && echo "  OK sched-bpf(cls_bpf/act_bpf) 已保留" || { echo "失败: kmod-sched-bpf 丢失（daed eBPF 需要）"; exit 1; }
             grep -q '^CONFIG_PACKAGE_kmod-netem=y' .config && { echo "失败: kmod-netem 仍在（会缺 kmod-sched 依赖）"; exit 1; } || echo "  OK netem 已剔除"
