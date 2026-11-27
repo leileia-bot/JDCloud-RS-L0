@@ -316,6 +316,22 @@ jobs:
           fi
           echo "OK: 内核槽未超限"
 
+          echo "==== BTF 是否留在落地内核里 ===="
+          RAW="$BDL/arch/arm64/boot/Image"
+          if [ -f "$RAW" ]; then
+            if LC_ALL=C grep -aobU $'\x9f\xeb\x01\x00' "$RAW" | head -3; then
+              echo "OK: Image 内扫到 BTF magic（0xeb9f + 版本1），说明 .BTF 段确实随内核落地"
+            else
+              echo "失败: Image 里没有 BTF magic，.BTF 被 strip 掉了"; exit 1
+            fi
+          else
+            echo "警告: 没有未压缩 Image，跳过 BTF 落地扫描"
+          fi
+
+          echo "==== BTF 冲突项检查（必须全空）===="
+          grep -E '^CONFIG_KERNEL_DEBUG_INFO_(REDUCED|SPLIT)=y|^CONFIG_KERNEL_DEBUG_INFO_COMPRESSED_(ZLIB|ZSTD)=y|^CONFIG_KERNEL_DEBUG_INFO_NONE=y' .config \
+            && { echo "失败: 存在与 BTF 冲突的内核调试选项"; exit 1; } || echo "OK: 无冲突项（REDUCED/SPLIT/COMPRESSED/NONE 均未开）"
+
       - name: 断言无线固件已落地（${{ inputs.WIFI_FW }}）
         if: ${{ !inputs.TEST }}
         run: |
