@@ -20,7 +20,8 @@ PROTECT = re.compile(
     r'watchdog.*|hwmon.*|thermal.*|i2c-core|i2c-algo-bit|i2c-gpio|spi.*|gpio.*|pinctrl.*|'
     r'ppp.*|pppoe|sched.*|lib-(crc|zstd|xxhash)|nls-.*|leds.*|button.*|input-core|'
     r'phy-.*|mdio.*|switch.*|dsa.*|regmap.*|mux.*|pcs-.*|sfp.*|ptp|net-selftests|'
-    r'block.*|mbcache|loop|nbd|scsi-core|sd-mod|usb-serial.*|tun|wireguard|vxlan|veth|bonding|bridge)$'
+    r'block.*|mbcache|loop|nbd|scsi-core|sd-mod|usb-serial.*|tun|wireguard|vxlan|veth|bonding|bridge|'
+    r'inet-diag|netlink-diag|xdp-sockets-diag)$'
 )
 
 def parse_sel(path):
