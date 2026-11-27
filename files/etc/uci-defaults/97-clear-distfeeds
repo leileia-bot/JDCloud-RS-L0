@@ -1,0 +1,10 @@
+#!/bin/sh
+# 去掉指向官方 snapshot 的 distfeeds：那是别人家的树+别人家的内核 hash，
+# 从那里装 kmod 必然 vermagic 错配（invalid module format），装 kernel 会开不了机。
+# 只留 customfeeds.list / 自建 U 盘源。想恢复的人自己把 # 去掉即可。
+for f in /etc/apk/repositories.d/distfeeds.list; do
+	[ -f "$f" ] || continue
+	sed -i 's|^https://downloads\.|#&|' "$f"
+done
+logger -t clear-distfeeds "distfeeds 已注释，防止跨树装包" 2>/dev/null
+exit 0
