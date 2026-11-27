@@ -158,7 +158,9 @@ jobs:
             kmod-usb-net-rtl8152-vendor \
             kmod-lkdtm kmod-pktgen kmod-bpf-test \
             kmod-crypto-test kmod-mtdtests \
-            v4l2loopback dmx_usb_module"
+            v4l2loopback dmx_usb_module \
+            kmod-usb-net-asix kmod-usb-net-asix-ax88179 kmod-usb-net-smsc95xx \
+            kmod-usb-net-lan78xx kmod-usb-net-kaweth kmod-usb-net-pegasus"
 
           # ==== TRIM：剔除"路由器上用不到"的整族驱动，给 BTF 腾内核槽空间 ====
           # 只砍与网络/存储/代理链路无关的设备族；网络类一个不动。
