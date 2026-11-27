@@ -160,14 +160,15 @@ jobs:
             kmod-crypto-test kmod-mtdtests \
             v4l2loopback dmx_usb_module \
             kmod-usb-net-asix kmod-usb-net-asix-ax88179 kmod-usb-net-smsc95xx \
-            kmod-usb-net-lan78xx kmod-usb-net-kaweth kmod-usb-net-pegasus"
+            kmod-usb-net-lan78xx kmod-usb-net-kaweth kmod-usb-net-pegasus \
+            kmod-usb-hid-mcp2221"
 
           # ==== TRIM：剔除"路由器上用不到"的整族驱动，给 BTF 腾内核槽空间 ====
           # 只砍与网络/存储/代理链路无关的设备族；网络类一个不动。
           # 明确保留（不要往 TRIM 里加）：dm（Docker device-mapper）、md（软 RAID）、
           #   cifs（挂 SMB）、nfs（挂 NFS）、btrfs/f2fs（群晖/手机盘直插识别）、
           #   watchdog（死机自重启）、hwmon（IPQ6000 温度读取）
-          TRIM_RE='kmod-(dvb|bluetooth|bt|hid|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|drbd|xfs|jfs|hfs|reiserfs|9p|erofs|gpu|drm|pps|rc-|ir-)'
+          TRIM_RE='kmod-(dvb|bluetooth|bt|hid|uhid|sound|snd|video|media|uvc|can|isdn|hamradio|firewire|thunderbolt|pcmcia|infiniband|rdma|joystick|nfc|w1|drbd|xfs|jfs|hfs|reiserfs|9p|erofs|gpu|drm|pps|rc-|ir-|iio|industrialio|input-adc-keys)'
           # 注意：gpio / i2c / spi 不在 TRIM 里（会引入大量 .ko 依赖；kmod-igb 缺 i2c-algo-bit.ko
           # 就是这么炸的），改用整族黑名单精确剔除设备驱动本身
           # 非本机 PCIe / 服务器网卡整族（亚瑟无 PCIe 槽，有线走内置 PHY）：
