@@ -12,7 +12,7 @@ import re, glob
 cfg = '.config'
 PROTECT = re.compile(
     r'^kmod-(mac80211|cfg80211|ath11k|ath11k-ahb|ath11k-firmware.*|'
-    r'usb-core|usb-common|usb-storage|usb-net.*|'
+    r'usb-core|usb-common|usb-storage|usb-net.*|usb-net-rtl8152|usb-net-cdc-ether|usb-serial-option|'
     r'nf-.*|nft-.*|ipt-.*|ip6t-.*|netfilter.*|'
     r'crypto-.*|crc-.*|'
     r'dm.*|md.*|'
