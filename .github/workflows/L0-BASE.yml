@@ -155,6 +155,10 @@ jobs:
             ath10k-firmware-qca6174 ath10k-firmware-qca9377"
 
           apply_blacklist() {
+            # 变体族整族压制：ath10k 有 -ct / -sdio / -smallbuffers 多个同源包，
+            # 它们都提供 ath10k_core.ko，只按名字逐个剔会漏掉变体 → 安装时 file overwrite 冲突
+            # （本轮真因：kmod-ath10k-smallbuffers / -sdio 试图覆盖 kmod-ath10k-ct-smallbuffers 的 .ko）
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-ath10k[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             for p in $BLACKLIST; do
               sed -i "s/^CONFIG_PACKAGE_${p}=[my]\$/# CONFIG_PACKAGE_${p} is not set/" .config
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config || \
@@ -176,6 +180,10 @@ jobs:
             echo "模块 kmod (m): $(grep -c '^CONFIG_PACKAGE_kmod.*=m' .config)"
             KY=$(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)
             [ "$KY" -ge 200 ] || { echo "失败: kmod 内建数只有 $KY，全量未生效"; exit 1; }
+            # 硬断言：ath10k 变体族必须一个不剩（否则 install 阶段必然 file overwrite）
+            BAD=$(grep -cE '^CONFIG_PACKAGE_kmod-ath10k[A-Za-z0-9._-]*=y' .config || true)
+            echo "残留 ath10k 变体(y): $BAD"
+            [ "$BAD" = "0" ] || { grep -E '^CONFIG_PACKAGE_kmod-ath10k[A-Za-z0-9._-]*=y' .config; echo "失败: ath10k 变体族仍有选中，install 会 file overwrite"; exit 1; }
             echo "排除项校验（必须全部 is not set）:"
             for p in kmod-ath10k kmod-ath10k-ct r8152 firewall wpad-wolfssl kmod-nss-wifi-drv; do
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config && echo "  OK $p" || echo "  !! $p 仍被选中"
