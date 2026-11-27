@@ -159,6 +159,9 @@ jobs:
           #   kmod-sched → 这 5 个是一条链，只砍一半会留下悬空依赖。保留 sched-core（HTB/TBF/
           #   ingress/cls_act 底座）、cake（SQM 主算法）、pie/fq-pie/red、flower。
           #   !! fq_codel 不在这些包里，target 基线 CONFIG_DEFAULT_FQ_CODEL=y 自带，砍了不掉队列算法
+          #   !! kmod-sched-bpf 不砍（cls_bpf.ko + act_bpf.ko）：daed/dae 的 eBPF 若走 tc 挂载，
+          #     这是 tc 侧唯一的 eBPF 载体，而本项目的 BTF 就是为了 dae/daed，砍了可能直接起不来；
+          #     体积很小，留着买保险
           # 文件系统（4 个）：udf/isofs（挂光盘/ISO 镜像）、minix（老 Minix）、nilfs2（停更日志FS）
           #   ext4/vfat/msdos/exfat/f2fs/btrfs/cifs/ksmbd/nfs/squashfs 全部保留
           # nls 编码（14 个）：中欧/西里尔/希腊/希伯来/冰岛/日文SJIS/繁体BIG5 代码页
@@ -190,7 +193,7 @@ jobs:
             kmod-sched-cbs kmod-sched-etf kmod-sched-taprio kmod-sched-mqprio \
             kmod-sched-mqprio-common kmod-sched-dualpi2 kmod-sched-drr kmod-sched-prio \
             kmod-sched-skbprio kmod-sched-act-gate kmod-sched-act-police \
-            kmod-sched-act-sample kmod-sched-act-vlan kmod-sched-bpf \
+            kmod-sched-act-sample kmod-sched-act-vlan \
             kmod-sched-ctinfo kmod-sched-connmark kmod-sched-ipset \
             kmod-fs-udf kmod-fs-isofs kmod-fs-minix kmod-fs-nilfs2 \
             kmod-nls-cp1250 kmod-nls-cp1251 kmod-nls-cp775 kmod-nls-cp850 \
@@ -273,9 +276,10 @@ jobs:
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config && echo "  !! 误伤 ${p}" || echo "  OK 未误伤 ${p}"
             done
             # 调度族必须成组剔除，且核心必须存活
-            BADS=$(grep -cE '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|mqprio|mqprio-common|dualpi2|drr|prio|skbprio|ets|gred|act-gate|act-pedit|act-police|act-sample|act-vlan|bpf|ctinfo|connmark|ipset))?=[ym]' .config || true)
+            BADS=$(grep -cE '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|mqprio|mqprio-common|dualpi2|drr|prio|skbprio|ets|gred|act-gate|act-pedit|act-police|act-sample|act-vlan|ctinfo|connmark|ipset))?=[ym]' .config || true)
             echo "残留调度族(y/m): $BADS"
-            [ "$BADS" = "0" ] || { grep -E '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|mqprio|mqprio-common|dualpi2|drr|prio|skbprio|ets|gred|act-gate|act-pedit|act-police|act-sample|act-vlan|bpf|ctinfo|connmark|ipset))?=[ym]' .config; echo "失败: 调度族未清干净"; exit 1; }
+            [ "$BADS" = "0" ] || { grep -E '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|mqprio|mqprio-common|dualpi2|drr|prio|skbprio|ets|gred|act-gate|act-pedit|act-police|act-sample|act-vlan|ctinfo|connmark|ipset))?=[ym]' .config; echo "失败: 调度族未清干净"; exit 1; }
+            grep -q '^CONFIG_PACKAGE_kmod-sched-bpf=y' .config && echo "  OK sched-bpf(cls_bpf/act_bpf) 已保留" || { echo "失败: kmod-sched-bpf 丢失（daed eBPF 需要）"; exit 1; }
             grep -q '^CONFIG_PACKAGE_kmod-netem=y' .config && { echo "失败: kmod-netem 仍在（会缺 kmod-sched 依赖）"; exit 1; } || echo "  OK netem 已剔除"
             echo "排除项校验（必须全部 is not set）:"
             for p in kmod-ath10k kmod-ath10k-ct r8152 firewall wpad-wolfssl kmod-nss-wifi-drv; do
