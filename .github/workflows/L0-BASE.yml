@@ -187,6 +187,7 @@ jobs:
             kmod-usb-hid-mcp2221 \
             kmod-ipt-chaos kmod-ipt-delude kmod-ipt-tarpit \
             kmod-ipt-lua kmod-ipt-psd kmod-ipt-lscan kmod-ipt-asn \
+            ebtables-legacy ebtables-legacy-utils ebtables-nft \
             kmod-crypto-hw-padlock kmod-crypto-hw-hifn-795x kmod-crypto-hw-atmel \
             kmod-crypto-md4 kmod-crypto-rmd160 kmod-crypto-fcrypt \
             kmod-crypto-pcbc kmod-crypto-michael-mic kmod-crypto-arc4 \
@@ -248,6 +249,9 @@ jobs:
             # 它们都提供 ath10k_core.ko，只按名字逐个剔会漏掉变体 → 安装时 file overwrite 冲突
             # （本轮真因：kmod-ath10k-smallbuffers / -sdio 试图覆盖 kmod-ath10k-ct-smallbuffers 的 .ko）
             sed -i -E 's/^CONFIG_PACKAGE_(kmod-ath10k[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # ebtables 二层老防火墙（MAC/VLAN 帧过滤），已被 nftables bridge 取代；
+            # firewall4 / nft-tproxy / nft-queue 均不依赖它，整族剔除 kmod-ebtables*
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-ebtables[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             # 非本机 PCIe 网卡整族（没有 PCIe 槽就必须全族一起走，不能只走一半）
             sed -i -E 's/^CONFIG_PACKAGE_('"${NIC_RE}"')[A-Za-z0-9._-]*=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             # IIO 工业/环境传感器整族（板子无对外 I2C/SPI 传感器接口，温度走 hwmon/TSENS）
