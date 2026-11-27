@@ -360,6 +360,13 @@ jobs:
             echo "内核 条目总数: $(grep -c '^CONFIG_' "$KC")"
           fi
           echo "kmod 内建 =y : $(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=y' .config)"
+          # 包与内核特性必须一对一对：包砍了，内核里对应的 CONFIG_ 也要真的关掉，
+          # 否则 =y 的特性 + 空壳 kmod 各说各话，既占体积又没意义
+          echo "==== 包与特性同步校验（TRIM 掉的族，内核里必须也关） ===="
+          for f in DVB_CORE BT SOUND SND MEDIA_SUPPORT MD DM_BUFIO BTRFS_FS XFS_FS F2FS_FS CIFS NFS_FS DRM; do
+            L=$(grep -E "^CONFIG_${f}(=|_)" "$KC" 2>/dev/null | head -3 || true)
+            if [ -n "$L" ]; then echo "  !! $f 仍有内核特性: $L"; else echo "  OK $f 已无内核特性"; fi
+          done
 
           size_check() {
             local K=$BDL/arch/arm64/boot/Image.gz
