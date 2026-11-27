@@ -228,6 +228,20 @@ jobs:
             echo "TRIM: kmod 内建 $before → $after（少 $((before-after)) 个）"
           }
 
+          # 第二批「板子上没这个硬件」精确剔除名单（235 项，见 Config/kmod-cut-extra.txt）
+          cut_extra() {
+            [ -f Config/kmod-cut-extra.txt ] || { echo "!! 缺 Config/kmod-cut-extra.txt"; exit 1; }
+            local n=0 p
+            while read -r p; do
+              [ -z "$p" ] && continue
+              case "$p" in \#*) continue;; esac
+              sed -i "s/^CONFIG_PACKAGE_${p}=[my]$/# CONFIG_PACKAGE_${p} is not set/" .config
+              grep -q "^# CONFIG_PACKAGE_${p} is not set" .config || echo "# CONFIG_PACKAGE_${p} is not set" >> .config
+              n=$((n+1))
+            done < Config/kmod-cut-extra.txt
+            echo "cut_extra: 压制 $n 项"
+          }
+
           apply_blacklist() {
             # 变体族整族压制：ath10k 有 -ct / -sdio / -smallbuffers 多个同源包，
             # 它们都提供 ath10k_core.ko，只按名字逐个剔会漏掉变体 → 安装时 file overwrite 冲突
@@ -255,13 +269,16 @@ jobs:
             sed -i 's/^CONFIG_PACKAGE_\(kmod-[A-Za-z0-9_.-]*\)=m$/CONFIG_PACKAGE_\1=y/' .config
             echo "==== [全量kmod 2/3] 套排除名单 + 二次 defconfig（解依赖/收敛 select） ===="
             apply_blacklist
+            cut_extra
             make defconfig -j$(nproc)
             echo "==== [全量kmod 3/3] 再压一遍，防止 luci-app-* 的 select 把变体拉回 ===="
             apply_blacklist
             trim_uncommon
+            cut_extra
             make defconfig -j$(nproc)
             apply_blacklist
             trim_uncommon
+            cut_extra
             echo "选中 kmod (y): $(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)"
             echo "模块 kmod (m): $(grep -c '^CONFIG_PACKAGE_kmod.*=m' .config)"
             KY=$(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)
@@ -277,6 +294,16 @@ jobs:
             for p in kmod-usb-net-rtl8152 kmod-usb-net-rtl8150; do
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config && echo "  !! 误伤 ${p}" || echo "  OK 未误伤 ${p}"
             done
+            # cut_extra 名单必须全清（读名单逐个查 y/m 残留）
+            BADE=0
+            while read -r p; do
+              [ -z "$p" ] && continue
+              case "$p" in \#*) continue;; esac
+              grep -q "^CONFIG_PACKAGE_${p}=[my]" .config && { echo "!! 残留 $p"; BADE=1; } || true
+            done < Config/kmod-cut-extra.txt
+            echo "cut_extra 残留标记: $BADE"
+            [ "$BADE" = "0" ] || { echo "失败: cut_extra 名单未清干净"; exit 1; }
+            grep -q '^CONFIG_PACKAGE_kmod-nf-ipvs=y' .config && echo "  OK nf-ipvs 已保留（keepalived/dockerd 用）" || { echo "失败: kmod-nf-ipvs 丢失"; exit 1; }
             # 调度族必须成组剔除，且核心必须存活
             BADS=$(grep -cE '^CONFIG_PACKAGE_kmod-sched(-(cbs|etf|taprio|mqprio|mqprio-common|dualpi2|drr|prio|skbprio|ets|gred|act-gate|act-pedit|act-police|act-sample|act-vlan|ctinfo|connmark|ipset))?=[ym]' .config || true)
             echo "残留调度族(y/m): $BADS"
