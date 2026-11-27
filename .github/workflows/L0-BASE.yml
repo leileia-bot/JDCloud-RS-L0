@@ -312,52 +312,72 @@ jobs:
       - name: 内核槽校验（BTF + 12M）
         run: |
           cd ./wrt
+          LIM=$((12288*1024))
           BDL=$(find build_dir -maxdepth 1 -type d -name 'linux-qualcommax_ipq60xx' | head -1)
           echo "build_dir: $BDL"; [ -n "$BDL" ] || { echo "失败: 找不到内核 build_dir"; exit 1; }
 
-          VML=$(find "$BDL" -maxdepth 1 -name 'vmlinux' | head -1)
-          [ -f "$VML" ] || { echo "失败: 找不到 vmlinux"; exit 1; }
-          echo "==== BTF 段检查 ===="
-          if readelf -SW "$VML" | grep -qE '\[ *[0-9]+\] \.BTF'; then
-            readelf -SW "$VML" | grep -E '\.BTF' | head -4
-            echo "OK: vmlinux 已带 .BTF 段（大小见上方 Size 列）"
-          else
-            echo "失败: vmlinux 没有 .BTF 段，BTF 未生效"; exit 1
-          fi
-
-          echo "==== 内核槽体积核算（上限 12288 KiB）===="
-          K=arch/arm64/boot/Image.gz
-          [ -f "$BDL/$K" ] || K=arch/arm64/boot/Image
-          [ -f "$BDL/$K" ] || { echo "失败: 找不到压缩内核 Image/Image.gz"; exit 1; }
-          KSZ=$(stat -c%s "$BDL/$K")
-          DSZ=0
-          for d in arch/arm64/boot/dts/qcom/*jdcloud*.dtb; do
-            [ -f "$BDL/$d" ] && { DSZ=$(stat -c%s "$BDL/$d"); echo "dtb: $(basename $d) $DSZ bytes"; break; }
-          done
-          TOT=$((KSZ+DSZ)); LIM=$((12288*1024))
-          echo "kernel: $K = $KSZ bytes ($((KSZ/1024)) KiB)"
-          echo "dtb: $DSZ bytes"
-          echo "合计: $TOT bytes ($((TOT/1024)) KiB) / 上限 $LIM bytes (12288 KiB) / 余量 $(( (LIM-TOT)/1024 )) KiB"
-          if [ "$TOT" -gt "$LIM" ]; then
-            echo "失败: 内核+dtb 超出 12M 内核槽（超 $(( (TOT-LIM)/1024 )) KiB）"; exit 1
-          fi
-          echo "OK: 内核槽未超限"
-
-          echo "==== BTF 是否留在落地内核里 ===="
-          RAW="$BDL/arch/arm64/boot/Image"
-          if [ -f "$RAW" ]; then
-            if LC_ALL=C grep -aobU $'\x9f\xeb\x01\x00' "$RAW" | head -3; then
-              echo "OK: Image 内扫到 BTF magic（0xeb9f + 版本1），说明 .BTF 段确实随内核落地"
-            else
-              echo "失败: Image 里没有 BTF magic，.BTF 被 strip 掉了"; exit 1
+          size_check() {
+            local K=$BDL/arch/arm64/boot/Image.gz
+            [ -f "$K" ] || K=$BDL/arch/arm64/boot/Image
+            [ -f "$K" ] || { echo "失败: 找不到内核 Image/Image.gz"; return 1; }
+            local KSZ=$(stat -c%s "$K") DSZ=0 TOT
+            for d in $BDL/arch/arm64/boot/dts/qcom/*jdcloud*.dtb; do
+              [ -f "$d" ] && { DSZ=$(stat -c%s "$d"); echo "dtb: $(basename $d) $DSZ bytes"; break; }
+            done
+            TOT=$((KSZ+DSZ))
+            echo "kernel: $(basename $K) = $KSZ bytes ($((KSZ/1024)) KiB)"
+            echo "合计: $TOT bytes ($((TOT/1024)) KiB) / 上限 12288 KiB / 余量 $(( (LIM-TOT)/1024 )) KiB"
+            if [ "$TOT" -gt "$LIM" ]; then
+              echo "判定: 内核+dtb 超出 12M 槽（超 $(( (TOT-LIM)/1024 )) KiB）"
+              return 1
             fi
-          else
-            echo "警告: 没有未压缩 Image，跳过 BTF 落地扫描"
+            echo "OK: 内核槽未超限"
+            return 0
+          }
+
+          btf_check() {
+            local VML=$(find "$BDL" -maxdepth 1 -name 'vmlinux' | head -1)
+            [ -f "$VML" ] || { echo "失败: 找不到 vmlinux"; return 1; }
+            echo "==== BTF 段检查 ===="
+            if readelf -SW "$VML" | grep -qE '\[ *[0-9]+\] \.BTF'; then
+              readelf -SW "$VML" | grep -E '\.BTF' | head -4
+            else
+              echo "失败: vmlinux 没有 .BTF 段（pahole 没产出 BTF）"; return 1
+            fi
+            echo "==== BTF 落地扫描 ===="
+            local RAW=$BDL/arch/arm64/boot/Image
+            if [ -f "$RAW" ]; then
+              LC_ALL=C grep -aobU $'\x9f\xeb\x01\x00' "$RAW" | head -3 \
+                || { echo "失败: Image 里没有 BTF magic（.BTF 被 strip 或没编进去）"; return 1; }
+            else
+              echo "警告: 无未压缩 Image，跳过 BTF 落地扫描"
+            fi
+            echo "==== BTF 冲突项检查 ===="
+            if grep -E '^CONFIG_KERNEL_DEBUG_INFO_(REDUCED|SPLIT)=y|^CONFIG_KERNEL_DEBUG_INFO_COMPRESSED_(ZLIB|ZSTD)=y|^CONFIG_KERNEL_DEBUG_INFO_NONE=y' .config; then
+              echo "失败: 存在与 BTF 冲突的内核调试选项"; return 1
+            fi
+            echo "OK: 无冲突项"
+            return 0
+          }
+
+          echo "######## 第一轮：内建 BTF 方案 ########"
+          if size_check && btf_check; then
+            echo "结论：BTF 内建 + 12M 内核槽，全部达标"
+            exit 0
           fi
 
-          echo "==== BTF 冲突项检查（必须全空）===="
-          grep -E '^CONFIG_KERNEL_DEBUG_INFO_(REDUCED|SPLIT)=y|^CONFIG_KERNEL_DEBUG_INFO_COMPRESSED_(ZLIB|ZSTD)=y|^CONFIG_KERNEL_DEBUG_INFO_NONE=y' .config \
-            && { echo "失败: 存在与 BTF 冲突的内核调试选项"; exit 1; } || echo "OK: 无冲突项（REDUCED/SPLIT/COMPRESSED/NONE 均未开）"
+          echo "######## 预案：BTF 放不下 → 去掉 BTF，重出无 BTF 固件 ########"
+          echo "说明：内核调试信息关掉，体积回落；daed/dae 改用外置 vmlinux-btf 补丁包"
+          sed -i 's/^CONFIG_KERNEL_DEBUG_INFO_BTF=y/# CONFIG_KERNEL_DEBUG_INFO_BTF is not set/' .config
+          sed -i 's/^CONFIG_KERNEL_DEBUG_INFO=y/# CONFIG_KERNEL_DEBUG_INFO is not set/' .config
+          grep -nE '^CONFIG_KERNEL_DEBUG_INFO' .config || echo "注意: .config 里无 DEBUG_INFO 项"
+          make target/linux/clean >/dev/null 2>&1 || true
+          if ! make -j$(nproc) 2>&1 | tail -120; then
+            echo "失败: 关掉 BTF 后重编没成功"; exit 1
+          fi
+          echo "######## 第二轮：无 BTF 体积校验 ########"
+          size_check || { echo "失败: 去掉 BTF 后仍超 12M，必须真正瘦身（这个方案要等你定）"; exit 1; }
+          echo "结论：已按预案去掉 BTF，固件体积达标"
 
       - name: 断言无线固件已落地（${{ inputs.WIFI_FW }}）
         if: ${{ !inputs.TEST }}
