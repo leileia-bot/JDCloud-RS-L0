@@ -228,9 +228,9 @@ jobs:
             echo "TRIM: kmod 内建 $before → $after（少 $((before-after)) 个）"
           }
 
-          # 第二批「板子上没这个硬件」精确剔除名单（235 项，见 Config/kmod-cut-extra.txt）
+          # 第二批「板子上没这个硬件」精确剔除名单（235 项，见 ../Config/kmod-cut-extra.txt）
           cut_extra() {
-            [ -f Config/kmod-cut-extra.txt ] || { echo "!! 缺 Config/kmod-cut-extra.txt"; exit 1; }
+            [ -f ../Config/kmod-cut-extra.txt ] || { echo "!! 缺 ../Config/kmod-cut-extra.txt"; exit 1; }
             local n=0 p
             while read -r p; do
               [ -z "$p" ] && continue
@@ -238,7 +238,7 @@ jobs:
               sed -i "s/^CONFIG_PACKAGE_${p}=[my]$/# CONFIG_PACKAGE_${p} is not set/" .config
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config || echo "# CONFIG_PACKAGE_${p} is not set" >> .config
               n=$((n+1))
-            done < Config/kmod-cut-extra.txt
+            done < ../Config/kmod-cut-extra.txt
             echo "cut_extra: 压制 $n 项"
           }
 
@@ -300,7 +300,7 @@ jobs:
               [ -z "$p" ] && continue
               case "$p" in \#*) continue;; esac
               grep -q "^CONFIG_PACKAGE_${p}=[my]" .config && { echo "!! 残留 $p"; BADE=1; } || true
-            done < Config/kmod-cut-extra.txt
+            done < ../Config/kmod-cut-extra.txt
             echo "cut_extra 残留标记: $BADE"
             [ "$BADE" = "0" ] || { echo "失败: cut_extra 名单未清干净"; exit 1; }
             grep -q '^CONFIG_PACKAGE_kmod-nf-ipvs=y' .config && echo "  OK nf-ipvs 已保留（keepalived/dockerd 用）" || { echo "失败: kmod-nf-ipvs 丢失"; exit 1; }
