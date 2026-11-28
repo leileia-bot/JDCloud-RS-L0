@@ -279,8 +279,9 @@ jobs:
             sed -i -E 's/^CONFIG_PACKAGE_(kmod-(rt2800|rt2x00|rt61|rt73)[A-Za-z0-9._-]*|rt61-pci-firmware|rt73-usb-firmware)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             # dahdi 电话语音板卡整族（本机无电话/语音硬件；板卡 .ko 多内建于主包，整族正则覆盖）
             sed -i -E 's/^CONFIG_PACKAGE_(kmod-dahdi[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
-            # TPM 可信平台模块整族（本机无 TPM 硬件）
-            sed -i -E 's/^CONFIG_PACKAGE_(kmod-tpm[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # TPM 硬件子包整族（本机无 TPM 芯片）；本体 kmod-tpm 必须保留——kmod-keys-trusted
+            # 可信密钥链 DEPENDS:=+kmod-tpm，#47 install 报 kmod-tpm no such package 即本体被误剔。
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-tpm-[A-Za-z0-9._-]+)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             # PoE PSE 供电控制器整族（本机无 PoE 口；含 pd/pd692x0/hasivo-hs104/regulator）
             sed -i -E 's/^CONFIG_PACKAGE_(kmod-pse[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             # team 网卡聚合整族（内置 PHY 无聚合场景；bonding 保留不受影响）
