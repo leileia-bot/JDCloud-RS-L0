@@ -587,15 +587,28 @@ jobs:
           OUT="$PWD/upload/kmoddeps"
           rm -rf "$OUT"; mkdir -p "$OUT"
 
-          # 1) Module.symvers：每个导出符号 → 导出它的模块（vmlinux=内建）
-          find ./build_dir -maxdepth 5 -name Module.symvers -type f 2>/dev/null | while read -r f; do
-            echo "取到 $f"
-            cp -f "$f" "$OUT/Module.symvers"
-          done
+          # 定位内核树（与 step14 同口径）：build_dir/target-*/linux-qualcommax_ipq60xx/linux-<版本>/
+          BDL=$(find build_dir -maxdepth 2 -type d -name 'linux-qualcommax_ipq60xx' | head -1)
+          KDIR=$(find "$BDL" -maxdepth 2 -type d -name 'linux-*' | head -1)
+          [ -n "$KDIR" ] || KDIR="$BDL"
 
-          # 2) modules.* 元数据（只有 =m 模块才有内容）
+          # 1) Module.symvers：优先内核树那份（含 vmlinux 内建导出），包目录的追加合并去重
+          : > "$OUT/Module.symvers"
+          if [ -f "$KDIR/Module.symvers" ]; then
+            cp -f "$KDIR/Module.symvers" "$OUT/Module.symvers"
+            echo "取到内核树 $KDIR/Module.symvers"
+          fi
+          find ./build_dir -maxdepth 5 -name Module.symvers -type f 2>/dev/null | while read -r f; do
+            [ "$f" = "$KDIR/Module.symvers" ] && continue
+            echo "合并包目录 $f"
+            cat "$f" >> "$OUT/Module.symvers"
+          done
+          sort -u -o "$OUT/Module.symvers" "$OUT/Module.symvers" 2>/dev/null || true
+
+          # 2) modules.* 元数据：优先 root-*/lib/modules，再退回内核树
           for m in modules.dep modules.builtin modules.builtin.modinfo modules.symbols modules.alias; do
-            p=$(find ./build_dir ./staging_dir -name "$m" -type f 2>/dev/null | head -1)
+            p=$(find ./build_dir -path "*lib/modules/*" -name "$m" -type f 2>/dev/null | head -1)
+            [ -z "$p" ] && p=$(find "$KDIR" -maxdepth 2 -name "$m" -type f 2>/dev/null | head -1)
             [ -n "$p" ] && cp -f "$p" "$OUT/$m"
           done
 
@@ -603,12 +616,21 @@ jobs:
           p=$(find ./build_dir -maxdepth 5 -path '*linux-*' -name .config -type f 2>/dev/null | head -1)
           [ -n "$p" ] && cp -f "$p" "$OUT/kernel-config.txt"
 
-          # 4) 每个模块的 .mod（含 required_symbols 线索），整体打包免name冲突
-          find ./build_dir -maxdepth 6 -name '*.mod' -type f -print0 2>/dev/null \
-            | tar --null -czf "$OUT/mods.tar.gz" -T - 2>/dev/null || true
+          # 4) 收集所有内核 .ko（旧版误抓工具链 Pascal *.mod，已修正），整体打包免名冲突
+          find ./build_dir ./staging_dir -name '*.ko' -type f 2>/dev/null > "$OUT/ko.list"
+          tar -czf "$OUT/mods.tar.gz" -T "$OUT/ko.list" 2>/dev/null || true
+
+          # 5) 每个 .ko 的 depends（modinfo -F depends），落 ko-depends.txt 供反向隐式边分析
+          : > "$OUT/ko-depends.txt"
+          while read -r ko; do
+            [ -z "$ko" ] && continue
+            dep=$(modinfo -F depends "$ko" 2>/dev/null | tr '\n' ' ')
+            echo "$(basename "$ko")|depends=${dep:-none}" >> "$OUT/ko-depends.txt"
+          done < "$OUT/ko.list"
 
           echo "==== 落盘结果 ===="
           ls -lh "$OUT" || true
+          echo "收集内核 .ko: $(wc -l < "$OUT/ko.list" 2>/dev/null || echo 0) 个；ko-depends 条目: $(wc -l < "$OUT/ko-depends.txt" 2>/dev/null || echo 0)"
           if [ -s "$OUT/Module.symvers" ]; then
             echo "Module.symvers 符号条数: $(wc -l < "$OUT/Module.symvers")"
             echo "其中 vmlinux 内建导出: $(awk -F'\t' '$2=="vmlinux"' "$OUT/Module.symvers" | wc -l)"
