@@ -539,14 +539,16 @@ jobs:
           }
           TOT=$(measure)
           echo "实测内核合计: ${TOT} KiB / 12M 槽 = 12288 KiB"
+          # 口径（用户拍板）：≤12M 放行；读取错误/定位失败（TOT<=0）放行只告警，不阻断；
+          # 只有真实读到体积且 >12288 KiB 才判定超限、弃 BTF 重编。
           if [ "${TOT}" -le 0 ]; then
-            echo "失败: 找不到纯内核镜像（定位失败，非超限）。候选清单："
+            echo "警告: 未定位到纯内核镜像（读取错误，按口径放行，不做 12M 槽校验、不阻断）。候选清单："
             echo "--- KDIR: $KDIR"; ls -la "$KDIR" 2>/dev/null | head -30
             echo "--- boot 目录:"; ls -la "$KDIR/arch/arm64/boot/" 2>/dev/null | head -30
             echo "--- bin/targets itb:"; find ./bin/targets -name '*.itb' 2>/dev/null
-            exit 1
-          fi
-          if [ "${TOT}" -gt 12288 ]; then
+            echo "BTF_MODE=btf" >> "$GITHUB_ENV"
+            echo "- **结论**: 内核体积读取失败（已放行，未校验 12M 槽）" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${TOT}" -gt 12288 ]; then
             echo "==== 超 12M（${TOT} > 12288）→ 放弃 BTF，同轮重编 ===="
             sed -i 's/^CONFIG_KERNEL_DEBUG_INFO_BTF=y/# CONFIG_KERNEL_DEBUG_INFO_BTF is not set/' .config
             grep -q '^# CONFIG_KERNEL_DEBUG_INFO_BTF is not set' .config || echo '# CONFIG_KERNEL_DEBUG_INFO_BTF is not set' >> .config
@@ -558,7 +560,12 @@ jobs:
             timeout 20400 make -j"$(nproc)" world
             TOT=$(measure)
             echo "无 BTF 实测: ${TOT} KiB"
-            [ "${TOT}" -le 12288 ] || { echo "失败: 放弃 BTF 后仍超 12M（${TOT} KiB）"; exit 1; }
+            if [ "${TOT}" -gt 12288 ]; then
+              echo "失败: 放弃 BTF 后仍超 12M（${TOT} KiB）"; exit 1
+            fi
+            if [ "${TOT}" -le 0 ]; then
+              echo "警告: 弃 BTF 重编后仍读取不到内核镜像（按口径放行）"
+            fi
             echo "BTF_MODE=no-btf" >> "$GITHUB_ENV"
             echo "- **结论**: 不带 BTF，${TOT} KiB / 12288 KiB 通过（余 $((12288-TOT)) KiB）" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -632,6 +639,30 @@ jobs:
           KDIR=$(find "$BDL" -maxdepth 2 -type d -name 'linux-*' | head -1)
           [ -n "$KDIR" ] || KDIR="$BDL"
 
+          # ===== 三路并发采集（不同取数路径互相对账）=====
+          # A: KDIR 内核源码树（编译中间产物 .ko + 内核镜像/vmlinux）
+          # B: root-*/lib/modules 安装树（实际装机的独立 .ko + modules.* 元数据）
+          # C: staging_dir + bin/targets 产物树（打包 .ko + 出厂镜像 itb/bin）
+          mkdir -p "$OUT/audit"
+          (
+            find "$KDIR" -name '*.ko' -type f 2>/dev/null > "$OUT/audit/ko.A.list"
+            {
+              [ -f "$KDIR/Image-uImage.itb" ] && echo "Image-uImage.itb $(stat -c%s "$KDIR/Image-uImage.itb")"
+              find "$KDIR" -maxdepth 1 -name 'vmlinux' -printf 'vmlinux %s\n'
+              find "$KDIR/arch/arm64/boot" -maxdepth 1 -type f \( -name 'Image.gz' -o -name 'Image' \) -printf '%f %s\n'
+            } > "$OUT/audit/image.A.txt" 2>/dev/null
+          ) &
+          (
+            find ./build_dir -path "*root-*/lib/modules/*" -name '*.ko' -type f 2>/dev/null > "$OUT/audit/ko.B.list"
+            find ./build_dir -path "*root-*/lib/modules/*" -name 'modules.*' -type f 2>/dev/null > "$OUT/audit/meta.B.list"
+          ) &
+          (
+            find ./staging_dir -name '*.ko' -type f 2>/dev/null > "$OUT/audit/ko.C.list"
+            find ./bin/targets \( -name '*.itb' -o -name '*.bin' \) -type f 2>/dev/null > "$OUT/audit/image.C.list"
+          ) &
+          wait
+          echo "三路采集完成: A(源码树) $(wc -l <"$OUT/audit/ko.A.list" 2>/dev/null || echo 0) | B(安装树) $(wc -l <"$OUT/audit/ko.B.list" 2>/dev/null || echo 0) | C(产物树) $(wc -l <"$OUT/audit/ko.C.list" 2>/dev/null || echo 0)"
+
           # 1) Module.symvers：优先内核树那份（含 vmlinux 内建导出），包目录的追加合并去重
           : > "$OUT/Module.symvers"
           if [ -f "$KDIR/Module.symvers" ]; then
@@ -656,8 +687,8 @@ jobs:
           p=$(find ./build_dir -maxdepth 5 -path '*linux-*' -name .config -type f 2>/dev/null | head -1)
           [ -n "$p" ] && cp -f "$p" "$OUT/kernel-config.txt"
 
-          # 4) 收集所有内核 .ko（旧版误抓工具链 Pascal *.mod，已修正），整体打包免名冲突
-          find ./build_dir ./staging_dir -name '*.ko' -type f 2>/dev/null > "$OUT/ko.list"
+          # 4) 收集所有内核 .ko（旧版误抓工具链 Pascal *.mod，已修正；剔除 README.ko 占位文件），整体打包免名冲突
+          find ./build_dir ./staging_dir -name '*.ko' -type f 2>/dev/null | grep -vE '/README[^/]*\.ko$' > "$OUT/ko.list"
           tar -czf "$OUT/mods.tar.gz" -T "$OUT/ko.list" 2>/dev/null || true
 
           # 5) 每个 .ko 的 depends（modinfo -F depends），落 ko-depends.txt 供反向隐式边分析
@@ -678,6 +709,9 @@ jobs:
           else
             echo "警告: 未取到 Module.symvers（多半是没编到内核阶段）"
           fi
+
+          # ===== 三路对账：basename 去重，列交集/差集，写 audit/ko-audit.txt =====
+          python3 "${{ github.workspace }}/Scripts/kmod-audit.py" "$OUT"
 
       - name: Upload Kmod Deps
         if: always()
