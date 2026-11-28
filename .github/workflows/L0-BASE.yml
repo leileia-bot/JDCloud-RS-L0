@@ -309,6 +309,7 @@ jobs:
             cut_extra
             echo "选中 kmod (y): $(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)"
             echo "模块 kmod (m): $(grep -c '^CONFIG_PACKAGE_kmod.*=m' .config)"
+          fi
 
       - name: Apply Config（断言 / BTF / 校验）
         run: |
