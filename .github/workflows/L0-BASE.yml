@@ -271,6 +271,20 @@ jobs:
             #   这样 kmod-usb-net-rtl8150/rtl8152（USB 有线网卡）、kmod-dsa-rtl8365mb、
             #   kmod-switch-rtl8306/8366/8367（交换机芯片）都不会被误伤
             sed -i -E 's/^CONFIG_PACKAGE_(kmod-(rtw|rtl)[0-9][A-Za-z0-9._-]*|rtl[0-9][A-Za-z0-9._-]*-firmware)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # A 档整族剔除（依据 #44 ko-depends 6063 条反向边：族内互依，外部 .ko 0 引用；
+            # 本地底座未装对应用户态包，PROTECT 保护根不含此六族）：
+            # 老 Ralink/rt2x00 WiFi（本机无 Ralink 芯片，含 rt61pci/rt73usb）
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-(rt2800|rt2x00|rt61pci|rt73usb)[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # dahdi 电话语音板卡整族（本机无电话/语音硬件；板卡 .ko 多内建于主包，整族正则覆盖）
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-dahdi[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # TPM 可信平台模块整族（本机无 TPM 硬件）
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-tpm[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # PoE PSE 供电控制器整族（本机无 PoE 口；含 pd/pd692x0/hasivo-hs104/regulator）
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-pse[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # team 网卡聚合整族（内置 PHY 无聚合场景；bonding 保留不受影响）
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-team[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
+            # openvswitch 软件交换机整族（用户态 ovs-switch 未装；vport-geneve/gre/vxlan 同属本族）
+            sed -i -E 's/^CONFIG_PACKAGE_(kmod-openvswitch[A-Za-z0-9._-]*)=[my]$/# CONFIG_PACKAGE_\1 is not set/' .config
             for p in $BLACKLIST; do
               sed -i "s/^CONFIG_PACKAGE_${p}=[my]\$/# CONFIG_PACKAGE_${p} is not set/" .config
               grep -q "^# CONFIG_PACKAGE_${p} is not set" .config || \
