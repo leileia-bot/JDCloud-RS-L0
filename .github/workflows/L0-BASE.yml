@@ -309,6 +309,12 @@ jobs:
             cut_extra
             echo "选中 kmod (y): $(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)"
             echo "模块 kmod (m): $(grep -c '^CONFIG_PACKAGE_kmod.*=m' .config)"
+
+      - name: Apply Config（断言 / BTF / 校验）
+        run: |
+          cd ./wrt
+          MODE="${{ inputs.WIFI_FW }}"
+          if [ "${{ inputs.ALL_KMODS }}" = "true" ]; then
             KY=$(grep -c '^CONFIG_PACKAGE_kmod.*=y' .config)
             # 门槛说明：基线全量 1133 个，本轮按硬件精确剔除约 575 个（cut_extra 235 + 各整族），合理余量 554
             # 阈值取 450 —— 只用来抓「ALL_KMODS 根本没生效」这种崩盘，不跟正常剔除对撞
