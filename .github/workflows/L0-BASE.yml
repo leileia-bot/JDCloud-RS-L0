@@ -521,15 +521,31 @@ jobs:
           [ -n "$KDIR" ] || KDIR="$BDL"
           echo "内核构建树: $KDIR"
           measure() {
-            K="$KDIR/arch/arm64/boot/Image.gz"; [ -f "$K" ] || K="$KDIR/arch/arm64/boot/Image"
-            [ -f "$K" ] || { echo 0; return; }
-            KSZ=$(stat -c%s "$K"); DSZ=0
-            for d in "$KDIR"/arch/arm64/boot/dts/qcom/*jdcloud*.dtb; do [ -f "$d" ] && { DSZ=$(stat -c%s "$d"); break; }; done
-            echo $(( (KSZ + DSZ + 1023) / 1024 ))
+            # 1) FitImage 纯内核 FIT：$KDIR/Image-uImage.itb（gzip Image + dtb，不含 rootfs/initramfs）
+            #    上游 KDIR_KERNEL_IMAGE = $(KDIR)/$(KERNEL_NAME)$(KERNEL_SUFFIX)，KERNEL_NAME=Image、SUFFIX=-uImage.itb
+            local KF="$KDIR/Image-uImage.itb"
+            if [ -f "$KF" ]; then echo $(( ($(stat -c%s "$KF") + 1023) / 1024 )); return; fi
+            # 2) 回退：arch/arm64/boot/Image.gz(或 Image) + 设备 dtb
+            local K="$KDIR/arch/arm64/boot/Image.gz"; [ -f "$K" ] || K="$KDIR/arch/arm64/boot/Image"
+            if [ -f "$K" ]; then
+              local DSZ=0
+              for d in "$KDIR"/arch/arm64/boot/dts/qcom/*jdcloud*.dtb; do [ -f "$d" ] && { DSZ=$(stat -c%s "$d"); break; }; done
+              echo $(( ($(stat -c%s "$K") + DSZ + 1023) / 1024 )); return
+            fi
+            # 3) 广搜纯内核 itb（排除 initramfs 一体镜像，后者含 rootfs 不能拿来比 12M 槽）
+            KF=$(find build_dir "$KDIR" ./bin/targets -maxdepth 4 -name '*uImage.itb' ! -name '*initramfs*' 2>/dev/null | head -1)
+            if [ -n "$KF" ] && [ -f "$KF" ]; then echo $(( ($(stat -c%s "$KF") + 1023) / 1024 )); return; fi
+            echo 0
           }
           TOT=$(measure)
           echo "实测内核合计: ${TOT} KiB / 12M 槽 = 12288 KiB"
-          if [ "${TOT}" -le 0 ]; then echo "失败: 找不到内核镜像"; exit 1; fi
+          if [ "${TOT}" -le 0 ]; then
+            echo "失败: 找不到纯内核镜像（定位失败，非超限）。候选清单："
+            echo "--- KDIR: $KDIR"; ls -la "$KDIR" 2>/dev/null | head -30
+            echo "--- boot 目录:"; ls -la "$KDIR/arch/arm64/boot/" 2>/dev/null | head -30
+            echo "--- bin/targets itb:"; find ./bin/targets -name '*.itb' 2>/dev/null
+            exit 1
+          fi
           if [ "${TOT}" -gt 12288 ]; then
             echo "==== 超 12M（${TOT} > 12288）→ 放弃 BTF，同轮重编 ===="
             sed -i 's/^CONFIG_KERNEL_DEBUG_INFO_BTF=y/# CONFIG_KERNEL_DEBUG_INFO_BTF is not set/' .config
