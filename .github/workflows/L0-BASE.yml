@@ -492,11 +492,15 @@ jobs:
           cd ./wrt
           BDL=$(find build_dir -maxdepth 2 -type d -name 'linux-qualcommax_ipq60xx' | head -1)
           [ -n "$BDL" ] || { echo "失败: 内核 build_dir 不存在"; exit 1; }
+          # 内核构建树在 BDL 下的 linux-<版本>/ 子目录（实证 linux-qualcommax_ipq60xx/linux-6.18.60/）
+          KDIR=$(find "$BDL" -maxdepth 2 -type d -name 'linux-*' | head -1)
+          [ -n "$KDIR" ] || KDIR="$BDL"
+          echo "内核构建树: $KDIR"
           measure() {
-            K="$BDL/arch/arm64/boot/Image.gz"; [ -f "$K" ] || K="$BDL/arch/arm64/boot/Image"
+            K="$KDIR/arch/arm64/boot/Image.gz"; [ -f "$K" ] || K="$KDIR/arch/arm64/boot/Image"
             [ -f "$K" ] || { echo 0; return; }
             KSZ=$(stat -c%s "$K"); DSZ=0
-            for d in "$BDL"/arch/arm64/boot/dts/qcom/*jdcloud*.dtb; do [ -f "$d" ] && { DSZ=$(stat -c%s "$d"); break; }; done
+            for d in "$KDIR"/arch/arm64/boot/dts/qcom/*jdcloud*.dtb; do [ -f "$d" ] && { DSZ=$(stat -c%s "$d"); break; }; done
             echo $(( (KSZ + DSZ + 1023) / 1024 ))
           }
           TOT=$(measure)
@@ -521,16 +525,18 @@ jobs:
             echo "BTF_MODE=btf" >> "$GITHUB_ENV"
             echo "- **结论**: 带 BTF，${TOT} KiB / 12288 KiB 通过（余 $((12288-TOT)) KiB）" >> "$GITHUB_STEP_SUMMARY"
           fi
-          VML=$(find "$BDL" -maxdepth 1 -name 'vmlinux' | head -1)
+          VML=$(find "$KDIR" -maxdepth 1 -name 'vmlinux' | head -1)
           if [ -f "$VML" ]; then
             echo "vmlinux: $(stat -c%s "$VML" | awk '{printf "%.1f MiB", $1/1048576}')"
             readelf -SW "$VML" | grep -E '\.BTF' | head -2 || echo "无 .BTF 段"
           fi
-          KC=$(find "$BDL" -maxdepth 2 -name '.config' | head -1)
+          KC=$(find "$KDIR" -maxdepth 2 -name '.config' | head -1)
           if [ -f "$KC" ]; then
             echo "内核特性 =y: $(grep -c '^CONFIG_[A-Za-z0-9_]*=y' "$KC")  =m: $(grep -c '^CONFIG_[A-Za-z0-9_]*=m' "$KC")  条目: $(grep -c '^CONFIG_' "$KC")"
           fi
           echo "kmod 内建: $(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=y' .config)  独立: $(grep -c '^CONFIG_PACKAGE_kmod-[A-Za-z0-9_.+-]*=m' .config)"
+          ITB=$(find ./bin/targets -name '*initramfs-uImage.itb' | head -1)
+          [ -n "$ITB" ] && echo "参考: initramfs itb $(stat -c%s "$ITB" | awk '{printf "%.1f MiB",$1/1048576}')（含 rootfs，不作 12M 槽校验）"
 
       - name: 断言无线固件已落地（${{ inputs.WIFI_FW }}）
         if: ${{ !inputs.TEST }}
