@@ -490,7 +490,7 @@ jobs:
       - name: 内核体积实测（12M 校验；超了自动抛弃 BTF 同轮重编）
         run: |
           cd ./wrt
-          BDL=$(find build_dir -maxdepth 1 -type d -name 'linux-qualcommax_ipq60xx' | head -1)
+          BDL=$(find build_dir -maxdepth 2 -type d -name 'linux-qualcommax_ipq60xx' | head -1)
           [ -n "$BDL" ] || { echo "失败: 内核 build_dir 不存在"; exit 1; }
           measure() {
             K="$BDL/arch/arm64/boot/Image.gz"; [ -f "$K" ] || K="$BDL/arch/arm64/boot/Image"
