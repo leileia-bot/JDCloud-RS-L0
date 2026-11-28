@@ -1,0 +1,22 @@
+# 目标独立模块基准表（=m，生成独立 .ko）— 由 #48 实测回填，待成功轮复核
+# 口径：一行一个 .ko 文件名（含后缀）。
+ac97_bus.ko
+backlight.ko
+cm109.ko
+evdev.ko
+gpio_backlight.ko
+hid-alps.ko
+hid-cp2112.ko
+hid-generic.ko
+hid-multitouch.ko
+hid.ko
+libeth.ko
+libie.ko
+libie_fwlog.ko
+lp.ko
+mdio.ko
+pwm_bl.ko
+snd-ac97-codec.ko
+usbhid.ko
+usblp.ko
+yealink.ko
